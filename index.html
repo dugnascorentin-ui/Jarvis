@@ -495,14 +495,17 @@ const CATALOG = [
   { name:'Codestral',     icon:'💻', color:'#ff6b35', tag:'Code absolu', url:'https://codestral.mistral.ai/v1/chat/completions',       model:'codestral-latest',      specialty:'code',    desc:'80+ langages.', link:'https://console.mistral.ai/api-keys' },
 ];
 
+const JARVIS_BASE = "Tu es JARVIS, un assistant IA personnel intelligent et polyvalent. Tu parles toujours à la première personne comme JARVIS. Ne mentionne JAMAIS le nom d'une autre IA (Gemini, GPT, Mistral etc). L'utilisateur parle uniquement à JARVIS. Réponds TOUJOURS en français, de manière naturelle et utile. Formate avec ##titres, -listes, ```code```, **gras** quand pertinent.";
+
 const PROMPTS = {
-  auto:     "Tu es JARVIS, assistant IA personnel. Réponds TOUJOURS en français. Formate avec ##titres, -listes, ```code```, **gras**. Précis et utile.",
-  code:     "Tu es JARVIS expert développement. Code fonctionnel commenté, ```blocs```. Réponds en français.",
-  web:      "Tu es JARVIS expert info mondiale. Précis, factuel, structuré. Réponds en français.",
-  write:    "Tu es JARVIS expert communication. Emails, rapports adaptés. Réponds en français.",
-  science:  "Tu es JARVIS expert sciences. Calculs détaillés, formules. Réponds en français.",
-  business: "Tu es JARVIS expert business. Chiffres précis, tableaux. Réponds en français.",
-  robot:    "Tu es JARVIS expert robotique. Guide étape par étape. Réponds en français.",
+  auto:     JARVIS_BASE + " Tu es un assistant complet, adapte-toi à la demande.",
+  code:     JARVIS_BASE + " Tu es expert en développement. Fournis du code fonctionnel et commenté avec des blocs ```langage.",
+  web:      JARVIS_BASE + " Tu es expert en actualités et informations mondiales. Sois précis et factuel.",
+  write:    JARVIS_BASE + " Tu es expert en communication. Adapte le ton selon le contexte (email, rapport, article).",
+  science:  JARVIS_BASE + " Tu es expert en sciences. Fournis des calculs détaillés et des formules claires.",
+  business: JARVIS_BASE + " Tu es expert en business et finance. Utilise des chiffres précis et des tableaux si utile.",
+  robot:    JARVIS_BASE + " Tu es expert en robotique et électronique. Guide étape par étape avec du code si nécessaire.",
+  image:    JARVIS_BASE + " Tu es expert en analyse visuelle. Décris et analyse en détail ce que tu vois.",
 };
 
 const PB_QUESTIONS = [
@@ -1105,23 +1108,44 @@ function setMode(m, btn) {
 function toggleVoice() { isRec ? stopVoice() : startVoice(); }
 
 function startVoice() {
+  // Vérifie HTTPS (requis pour micro sur Safari)
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+    toast('❌ Micro nécessite HTTPS — utilise ton URL Cloudflare');
+    return;
+  }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { alert('Utilise Chrome pour le micro.'); return; }
-  recognition = new SR(); recognition.lang=ttsLang; recognition.continuous=false; recognition.interimResults=false;
-  recognition.onstart = () => {
-    isRec=true;
-    document.getElementById('micBtn').classList.add('rec');
-    document.getElementById('micBtn').textContent='⏹';
-    document.getElementById('voiceInd').style.display='flex';
-  };
-  recognition.onresult = e => {
-    const t=e.results[0][0].transcript;
-    document.getElementById('chatInput').value=t; grow(document.getElementById('chatInput'));
-    stopVoice(); setTimeout(()=>send(),400);
-  };
-  recognition.onerror = () => stopVoice();
-  recognition.onend   = () => stopVoice();
-  try { recognition.start(); } catch { stopVoice(); }
+  if (!SR) {
+    toast('❌ Micro non supporté — utilise Safari sur iPhone ou Chrome sur PC');
+    return;
+  }
+  // Demande permission micro
+  navigator.mediaDevices?.getUserMedia({audio:true}).then(() => {
+    recognition = new SR();
+    recognition.lang = ttsLang;
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.onstart = () => {
+      isRec=true;
+      document.getElementById('micBtn').classList.add('rec');
+      document.getElementById('micBtn').textContent='⏹';
+      document.getElementById('voiceInd').style.display='flex';
+    };
+    recognition.onresult = e => {
+      const t=e.results[0][0].transcript;
+      document.getElementById('chatInput').value=t;
+      grow(document.getElementById('chatInput'));
+      stopVoice(); setTimeout(()=>send(),400);
+    };
+    recognition.onerror = err => {
+      console.error('Micro erreur:', err.error);
+      toast('❌ Micro : ' + (err.error==='not-allowed'?'Permission refusée — autorise le micro dans Safari':err.error));
+      stopVoice();
+    };
+    recognition.onend = () => stopVoice();
+    try { recognition.start(); } catch(e) { toast('❌ Impossible de démarrer le micro'); stopVoice(); }
+  }).catch(() => {
+    toast('❌ Permission micro refusée — va dans Réglages Safari → Micro → Autoriser');
+  });
 }
 
 function stopVoice() {
@@ -1192,18 +1216,45 @@ function autoRoute(text) {
   const t = (text||'').toLowerCase();
   const avail = getAllAIs().filter(ai=>!!getKey(ai));
   if (!avail.length) return null;
-  if (pendingImg) { const g=avail.find(a=>a.id==='gemini'); if (g) return {ai:g,reason:'image'}; }
+
+  // Image toujours sur Gemini
+  if (pendingImg) {
+    const g = avail.find(a=>a.id==='gemini');
+    if (g) return {ai:g, reason:'image'};
+  }
+
+  // Détection du type de tâche
   const checks = {
-    code:     /\b(code|programme|app|site(?: web)?|html|css|javascript|python|sql|react|node|api|d[eé]velop|script|bug)\b/i,
-    science:  /\b(calcul|physique|chimie|math|[eé]quation|formule|science|quantum|biologie|algorithme)\b/i,
-    business: /\b(co[uû]t|rentabilit|startup|business|march[eé]|strat[eé]gie|financ|budget|investissement)\b/i,
-    robot:    /\b(robot|arduino|raspberry|capteur|[eé]lectronique|servo|moteur|circuit|iot)\b/i,
-    write:    /\b(r[eé]dige|[eé]cris|email|lettre|rapport|article|discours|post|r[eé]sum[eé]|traduis)\b/i,
+    code:     /\b(code|programme|app|site web|html|css|javascript|python|sql|react|node\.js|api|développ|script|bug|erreur|fonction|class|import|github)\b/i,
+    science:  /\b(calcul|physique|chimie|math|équation|formule|science|quantum|biologie|algorithme|statistique|données)\b/i,
+    business: /\b(coût|rentabilit|startup|business|marché|stratégie|financ|budget|investissement|comptabilit|trésorerie|bilan|chiffre)\b/i,
+    robot:    /\b(robot|arduino|raspberry|capteur|électronique|servo|moteur|circuit|iot|automatisation)\b/i,
+    web:      /\b(actualité|news|information|monde|politique|sport|météo|événement|aujourd'hui|dernière)\b/i,
   };
-  let pref = 'general';
-  for (const [k,rx] of Object.entries(checks)) { if (rx.test(t)) { pref=k; break; } }
-  const spec = avail.find(ai=>(Array.isArray(ai.specialty)?ai.specialty:[ai.specialty]).includes(pref));
-  return { ai: spec || avail.find(a=>a.id==='groq') || avail.find(a=>a.id==='cerebras') || avail[0], reason:pref };
+
+  // Ordre de priorité des IAs par spécialité
+  const routing = {
+    code:     ['mistral','groq','gemini','deepseek','cerebras'],
+    science:  ['deepseek','gemini','groq','mistral','cerebras'],
+    business: ['deepseek','gemini','groq','mistral','cerebras'],
+    robot:    ['mistral','deepseek','groq','gemini','cerebras'],
+    web:      ['gemini','groq','cerebras','deepseek','mistral'],
+    general:  ['groq','gemini','cerebras','deepseek','mistral'],
+    image:    ['gemini','groq','cerebras','deepseek','mistral'],
+  };
+
+  let reason = 'general';
+  for (const [k,rx] of Object.entries(checks)) {
+    if (rx.test(t)) { reason=k; break; }
+  }
+
+  // Cherche la première IA disponible dans l'ordre de priorité
+  const order = routing[reason] || routing.general;
+  for (const aiId of order) {
+    const ai = avail.find(a=>a.id===aiId);
+    if (ai) return { ai, reason };
+  }
+  return { ai: avail[0], reason };
 }
 
 // ═══════════════════════════════════════
@@ -1232,9 +1283,10 @@ function appendMsgDOM(role, text, ai, imgSrc) {
   document.getElementById('welcomeEl')?.remove();
   const c    = document.getElementById('messages');
   const wrap = document.createElement('div'); wrap.className='msg '+role;
-  const av   = role==='user' ? (getName()[0]||'T').toUpperCase() : (ai?.icon||'⚡');
-  const name = role==='user' ? getName() : (ai?.name||'JARVIS');
-  const tag  = role==='assistant'&&ai ? `<span class="ai-tag" style="background:${ai.color}18;color:${ai.color};border:1px solid ${ai.color}30">${ai.name}</span>` : '';
+  const av   = role==='user' ? (getName()[0]||'T').toUpperCase() : '⚡';
+  const name = role==='user' ? getName() : 'JARVIS';
+  // IA visible discrètement en petit, pas en gros
+  const tag  = role==='assistant'&&ai ? `<span class="ai-tag" style="background:rgba(255,255,255,.04);color:var(--text3);border:1px solid var(--line);font-size:8px">via ${ai.name}</span>` : '';
   const content = role==='assistant' ? md(text) : escHtml(text).replace(/\n/g,'<br>');
   wrap.innerHTML = `
     <div class="msg-av">${av}</div>
@@ -1257,7 +1309,8 @@ function appendTyping(ai) {
   document.getElementById('welcomeEl')?.remove();
   const c=document.getElementById('messages'); const w=document.createElement('div');
   w.className='msg assistant'; w.id='typingRow';
-  w.innerHTML=`<div class="msg-av">${ai?.icon||'⚡'}</div><div class="msg-content"><div class="msg-bubble"><div class="typing-dots"><span></span><span></span><span></span></div></div></div>`;
+  // JARVIS parle toujours en son nom, l'IA est invisible
+  w.innerHTML=`<div class="msg-av">⚡</div><div class="msg-content"><div class="msg-bubble"><div class="typing-dots"><span></span><span></span><span></span></div></div></div>`;
   c.appendChild(w); c.scrollTop=c.scrollHeight;
 }
 
