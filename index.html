@@ -1259,16 +1259,24 @@ function showFP(name,size,src,type) {
 function clearPending() { pendingImg=null; pendingFile=null; document.getElementById('filePrevArea').innerHTML=''; }
 
 // ═══════════════════════════════════════
-// AUTO ROUTING
+// AUTO ROUTING — meilleure IA par type (qualité d'abord, déterministe)
 // ═══════════════════════════════════════
-// Pointeur round-robin : répartit entre les IAs aussi compétentes
-// pour éviter de toujours choisir la même.
-let _routeRR = 0;
-
 // Spécialité visée pour chaque type d'intention détectée
 const REASON_SPECIALTY = {
   code:'code', science:'science', business:'business',
   web:'web', image:'image', robot:'code', general:'general',
+};
+
+// Classement par QUALITÉ (meilleure IA en premier) pour chaque type.
+// JARVIS prend la première de la liste qui possède une clé configurée.
+const QUALITY_ORDER = {
+  code:     ['mistral','deepseek','gemini','groq','cerebras'],
+  science:  ['deepseek','gemini','mistral','groq','cerebras'],
+  business: ['deepseek','gemini','mistral','groq','cerebras'],
+  robot:    ['mistral','deepseek','gemini','groq','cerebras'],
+  web:      ['gemini','deepseek','groq','cerebras','mistral'],
+  image:    ['gemini'], // seul Gemini gère la vision
+  general:  ['gemini','deepseek','mistral','groq','cerebras'], // qualité avant vitesse
 };
 
 function autoRoute(text) {
@@ -1299,22 +1307,23 @@ function autoRoute(text) {
     if (rx.test(t)) { reason = k; break; }
   }
 
-  // Score chaque IA disponible (IAs personnalisées comprises) :
-  // +2 si elle a la spécialité visée, +1 si elle est polyvalente.
-  const wanted = REASON_SPECIALTY[reason] || 'general';
-  const scored = avail.map(ai => {
-    const spec = ai.specialty || [];
-    let score = 0;
-    if (spec.includes(wanted))    score += 2;
-    if (spec.includes('general')) score += 1;
-    return { ai, score };
-  });
+  // 1) Meilleure IA disponible selon le classement qualité (déterministe)
+  const order = QUALITY_ORDER[reason] || QUALITY_ORDER.general;
+  for (const id of order) {
+    const ai = avail.find(a => a.id === id);
+    if (ai) return { ai, reason };
+  }
 
-  // Garde les IAs les mieux notées, puis tourne entre elles (round-robin)
-  const best = Math.max(...scored.map(s=>s.score));
-  const top  = scored.filter(s=>s.score===best).map(s=>s.ai);
-  const ai   = top[_routeRR++ % top.length];
-  return { ai, reason };
+  // 2) Repli : aucune IA du classement dispo (ex. seulement des IAs perso)
+  //    → on prend la mieux notée selon sa spécialité, sans aléatoire.
+  const wanted = REASON_SPECIALTY[reason] || 'general';
+  let bestAI = avail[0], bestScore = -1;
+  for (const ai of avail) {
+    const spec = ai.specialty || [];
+    const score = (spec.includes(wanted) ? 2 : 0) + (spec.includes('general') ? 1 : 0);
+    if (score > bestScore) { bestScore = score; bestAI = ai; }
+  }
+  return { ai: bestAI, reason };
 }
 
 // ═══════════════════════════════════════
