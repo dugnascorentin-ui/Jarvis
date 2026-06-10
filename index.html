@@ -482,8 +482,8 @@ a{color:var(--blue2);text-decoration:none}
 // CONFIG — IAs disponibles
 // ═══════════════════════════════════════
 const AIS = [
-  { id:'gemini',   name:'Gemini 2.5 Flash', icon:'🔵', color:'#4285f4', tag:'Google · Vision',    model:'gemini-2.5-flash-preview-04-17', type:'gemini', storKey:'gem', specialty:['general','web','image','write'], ph:'AIzaSy...',   link:'https://aistudio.google.com/app/apikey', builtin:true },
-  { id:'groq',     name:'LLaMA 4 Scout',    icon:'🔷', color:'#00e5ff', tag:'Groq · Rapide',      model:'llama-4-scout-17b-16e-instruct',  type:'openai', storKey:'groq',specialty:['general','write'],              ph:'gsk_...',     link:'https://console.groq.com/keys',           url:'https://api.groq.com/openai/v1/chat/completions', builtin:true },
+  { id:'gemini',   name:'Gemini 2.5 Flash', icon:'🔵', color:'#4285f4', tag:'Google · Vision',    model:'gemini-2.5-flash', type:'gemini', storKey:'gem', specialty:['general','web','image','write'], ph:'AIzaSy...',   link:'https://aistudio.google.com/app/apikey', builtin:true },
+  { id:'groq',     name:'LLaMA 4 Scout',    icon:'🔷', color:'#00e5ff', tag:'Groq · Rapide',      model:'meta-llama/llama-4-scout-17b-16e-instruct',  type:'openai', storKey:'groq',specialty:['general','write'],              ph:'gsk_...',     link:'https://console.groq.com/keys',           url:'https://api.groq.com/openai/v1/chat/completions', builtin:true },
   { id:'mistral',  name:'Mistral Large',    icon:'🟠', color:'#ff6b35', tag:'Mistral 🇫🇷 · Code', model:'mistral-large-latest',            type:'openai', storKey:'mis', specialty:['code','write'],                 ph:'Clé Mistral', link:'https://console.mistral.ai/api-keys',     url:'https://api.mistral.ai/v1/chat/completions',    builtin:true },
   { id:'deepseek', name:'DeepSeek V3',      icon:'🟣', color:'#ab47bc', tag:'DeepSeek · Science', model:'deepseek-chat',                   type:'openai', storKey:'dsk', specialty:['science','business'],           ph:'sk-...',      link:'https://platform.deepseek.com/api_keys',  url:'https://api.deepseek.com/chat/completions',     builtin:true },
   { id:'cerebras', name:'LLaMA Cerebras',   icon:'🟢', color:'#66bb6a', tag:'Cerebras · Éclair',  model:'llama-3.3-70b',                   type:'openai', storKey:'cer', specialty:['general'],                     ph:'csk-...',     link:'https://cloud.cerebras.ai',               url:'https://api.cerebras.ai/v1/chat/completions',   builtin:true },
@@ -527,14 +527,31 @@ const AI_UPDATES = [
 // ═══════════════════════════════════════
 // CRYPTO — AES-256-GCM
 // ═══════════════════════════════════════
+// Jeton témoin : on vérifie le mot de passe en le déchiffrant (PBKDF2 lent),
+// au lieu d'un hash rapide qui pourrait être brute-forcé hors-ligne.
+const VERIFY_TOKEN = 'JARVIS-VERIFY-OK';
+// Sel aléatoire stocké en clair (par installation). 'jv8-2026' = sel hérité
+// des anciennes versions, conservé pour ne pas casser les données existantes.
+const getSalt = () => { try { return localStorage.getItem('jv8p_salt') || 'jv8-2026'; } catch { return 'jv8-2026'; } };
+const genSalt = () => { const a = crypto.getRandomValues(new Uint8Array(16)); return btoa(String.fromCharCode(...a)); };
+
 const CRYPTO = {
-  async deriveKey(pwd, salt = 'jv8-2026') {
+  async deriveKey(pwd, salt = getSalt()) {
     const enc = new TextEncoder();
     const km = await crypto.subtle.importKey('raw', enc.encode(pwd), 'PBKDF2', false, ['deriveKey']);
     return crypto.subtle.deriveKey(
       { name:'PBKDF2', salt:enc.encode(salt), iterations:310000, hash:'SHA-256' },
       km, { name:'AES-GCM', length:256 }, false, ['encrypt','decrypt']
     );
+  },
+  // Crée le jeton témoin chiffré avec la clé dérivée du mot de passe
+  async makeVerifier(pwd) { return this.encrypt(VERIFY_TOKEN, pwd); },
+  // null = pas de jeton (ancien compte à migrer), true/false = mdp correct ou non
+  async checkVerifier(pwd) {
+    const v = SEC.plain('verify','');
+    if (!v) return null;
+    const dec = await this.decrypt(v, pwd);
+    return dec === VERIFY_TOKEN;
   },
   async encrypt(text, pwd) {
     try {
@@ -615,7 +632,7 @@ const setMem     = async m => { _cache.memory = m; await SEC.set('memory', m); }
 const getProjects= ()  => _cache.projects || [];
 const saveProjects= async p => { _cache.projects = p; await SEC.set('projects', p); };
 const getName    = ()  => SEC.plain('name','Toi');
-const escHtml    = s   => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const escHtml    = s   => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 const toast      = msg => {
   const t = document.createElement('div');
   t.className = 'toast'; t.textContent = msg;
@@ -626,7 +643,8 @@ const toast      = msg => {
 // LOCK / UNLOCK
 // ═══════════════════════════════════════
 function buildLockForm() {
-  const hasPwd = !!SEC.plain('pwdhash','');
+  // Compte existant : nouveau jeton témoin OU ancien hash (à migrer)
+  const hasPwd = !!(SEC.plain('verify','') || SEC.plain('pwdhash',''));
   const f = document.getElementById('lockForm');
   const h = document.getElementById('lockHint');
   if (!hasPwd) {
@@ -655,8 +673,12 @@ async function doSetup() {
   const msg = document.getElementById('lockMsg');
   if (p1.length < 8) { msg.textContent = '❌ Minimum 8 caractères'; msg.className='lock-msg err'; return; }
   if (p1 !== p2)     { msg.textContent = '❌ Mots de passe différents'; msg.className='lock-msg err'; return; }
-  SEC.setPlain('pwdhash', await CRYPTO.hashPwd(p1));
-  _pwd = p1; await startSession(p1);
+  // Sel aléatoire unique à cette installation
+  SEC.setPlain('salt', genSalt());
+  _pwd = p1;
+  // Jeton témoin chiffré (vérification lente, pas de hash rapide à brute-forcer)
+  SEC.setPlain('verify', await CRYPTO.makeVerifier(p1));
+  await startSession(p1);
 }
 
 async function doUnlock() {
@@ -665,7 +687,10 @@ async function doUnlock() {
   const pwd = input.value; if (!pwd) return;
   const btn = document.getElementById('lockBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Vérification...'; }
-  if (await CRYPTO.hashPwd(pwd) !== SEC.plain('pwdhash','')) {
+  // Vérification via jeton témoin ; repli sur l'ancien hash si compte non migré
+  let okPwd = await CRYPTO.checkVerifier(pwd);
+  if (okPwd === null) okPwd = (await CRYPTO.hashPwd(pwd) === SEC.plain('pwdhash',''));
+  if (!okPwd) {
     loginAttempts++;
     input.value = ''; input.className = 'lock-inp shake';
     setTimeout(() => input.className = 'lock-inp', 600);
@@ -679,7 +704,13 @@ async function doUnlock() {
     }
     return;
   }
-  loginAttempts = 0; _pwd = pwd; await startSession(pwd);
+  loginAttempts = 0; _pwd = pwd;
+  // Migration des anciens comptes : crée le jeton témoin et supprime le hash faible
+  if (!SEC.plain('verify','')) {
+    SEC.setPlain('verify', await CRYPTO.makeVerifier(pwd));
+    try { localStorage.removeItem('jv8p_pwdhash'); } catch {}
+  }
+  await startSession(pwd);
 }
 
 function showBlocked(ms) {
@@ -1108,9 +1139,9 @@ function setMode(m, btn) {
 function toggleVoice() { isRec ? stopVoice() : startVoice(); }
 
 function startVoice() {
-  // Vérifie HTTPS (requis pour micro sur Safari)
+  // Vérifie HTTPS (requis pour le micro sur Safari/iOS)
   if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
-    toast('❌ Micro nécessite HTTPS — utilise ton URL Cloudflare');
+    toast('❌ Micro nécessite HTTPS — utilise ton URL sécurisée');
     return;
   }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1118,12 +1149,16 @@ function startVoice() {
     toast('❌ Micro non supporté — utilise Safari sur iPhone ou Chrome sur PC');
     return;
   }
-  // Demande permission micro
-  navigator.mediaDevices?.getUserMedia({audio:true}).then(() => {
+  // IMPORTANT iOS Safari : la reconnaissance DOIT démarrer de façon
+  // synchrone dans le geste utilisateur (le clic). Un getUserMedia await
+  // avant casse ce contexte et iOS refuse de démarrer le micro.
+  // La Web Speech API gère elle-même la demande de permission.
+  try {
     recognition = new SR();
     recognition.lang = ttsLang;
     recognition.continuous = false;
     recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
     recognition.onstart = () => {
       isRec=true;
       document.getElementById('micBtn').classList.add('rec');
@@ -1138,14 +1173,22 @@ function startVoice() {
     };
     recognition.onerror = err => {
       console.error('Micro erreur:', err.error);
-      toast('❌ Micro : ' + (err.error==='not-allowed'?'Permission refusée — autorise le micro dans Safari':err.error));
+      const msg = {
+        'not-allowed':       'Permission refusée — Réglages → Safari → Micro → Autoriser',
+        'service-not-allowed':'Micro bloqué — autorise le micro pour ce site',
+        'no-speech':         'Aucune parole détectée — réessaie',
+        'audio-capture':     'Aucun micro détecté',
+        'network':           'Erreur réseau pendant la reconnaissance',
+      }[err.error] || err.error;
+      toast('❌ Micro : ' + msg);
       stopVoice();
     };
     recognition.onend = () => stopVoice();
-    try { recognition.start(); } catch(e) { toast('❌ Impossible de démarrer le micro'); stopVoice(); }
-  }).catch(() => {
-    toast('❌ Permission micro refusée — va dans Réglages Safari → Micro → Autoriser');
-  });
+    recognition.start(); // synchrone dans le clic — requis par iOS Safari
+  } catch(e) {
+    toast('❌ Impossible de démarrer le micro : ' + e.message);
+    stopVoice();
+  }
 }
 
 function stopVoice() {
@@ -1212,49 +1255,60 @@ function clearPending() { pendingImg=null; pendingFile=null; document.getElement
 // ═══════════════════════════════════════
 // AUTO ROUTING
 // ═══════════════════════════════════════
+// Pointeur round-robin : répartit entre les IAs aussi compétentes
+// pour éviter de toujours choisir la même.
+let _routeRR = 0;
+
+// Spécialité visée pour chaque type d'intention détectée
+const REASON_SPECIALTY = {
+  code:'code', science:'science', business:'business',
+  web:'web', image:'image', robot:'code', general:'general',
+};
+
 function autoRoute(text) {
-  const t = (text||'').toLowerCase();
+  // On retire les accents pour que les \b fonctionnent (les caractères
+  // accentués ne sont pas des « word chars » en JS) et pour matcher les
+  // racines de mots (« développer », « développement », etc.).
+  const t = (text||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const avail = getAllAIs().filter(ai=>!!getKey(ai));
   if (!avail.length) return null;
 
-  // Image toujours sur Gemini
+  // Image → première IA capable de vision
   if (pendingImg) {
-    const g = avail.find(a=>a.id==='gemini');
-    if (g) return {ai:g, reason:'image'};
+    const g = avail.find(a=>(a.specialty||[]).includes('image'));
+    if (g) return { ai:g, reason:'image' };
   }
 
-  // Détection du type de tâche
+  // Détection du type de tâche (texte sans accents → racines de mots)
   const checks = {
-    code:     /\b(code|programme|app|site web|html|css|javascript|python|sql|react|node\.js|api|développ|script|bug|erreur|fonction|class|import|github)\b/i,
-    science:  /\b(calcul|physique|chimie|math|équation|formule|science|quantum|biologie|algorithme|statistique|données)\b/i,
-    business: /\b(coût|rentabilit|startup|business|marché|stratégie|financ|budget|investissement|comptabilit|trésorerie|bilan|chiffre)\b/i,
-    robot:    /\b(robot|arduino|raspberry|capteur|électronique|servo|moteur|circuit|iot|automatisation)\b/i,
-    web:      /\b(actualité|news|information|monde|politique|sport|météo|événement|aujourd'hui|dernière)\b/i,
-  };
-
-  // Ordre de priorité des IAs par spécialité
-  const routing = {
-    code:     ['mistral','groq','gemini','deepseek','cerebras'],
-    science:  ['deepseek','gemini','groq','mistral','cerebras'],
-    business: ['deepseek','gemini','groq','mistral','cerebras'],
-    robot:    ['mistral','deepseek','groq','gemini','cerebras'],
-    web:      ['gemini','groq','cerebras','deepseek','mistral'],
-    general:  ['groq','gemini','cerebras','deepseek','mistral'],
-    image:    ['gemini','groq','cerebras','deepseek','mistral'],
+    code:     /\b(code|programm|appli|html|css|javascript|python|sql|react|node|developp|script|bug|erreur|fonction|classe|github|debug|compil|framework|backend|frontend)/,
+    science:  /\b(calcul|physique|chimie|math|equation|formule|science|quantique|biologie|algorithm|statistiq|donnee)/,
+    business: /\b(rentab|startup|business|marche|strateg|financ|budget|investiss|comptab|tresorerie|bilan)/,
+    robot:    /\b(robot|arduino|raspberry|capteur|electroniq|servo|moteur|circuit|iot|automatis)/,
+    web:      /\b(actualite|news|info|monde|politique|sport|meteo|evenement|aujourd|derniere|recent)/,
   };
 
   let reason = 'general';
   for (const [k,rx] of Object.entries(checks)) {
-    if (rx.test(t)) { reason=k; break; }
+    if (rx.test(t)) { reason = k; break; }
   }
 
-  // Cherche la première IA disponible dans l'ordre de priorité
-  const order = routing[reason] || routing.general;
-  for (const aiId of order) {
-    const ai = avail.find(a=>a.id===aiId);
-    if (ai) return { ai, reason };
-  }
-  return { ai: avail[0], reason };
+  // Score chaque IA disponible (IAs personnalisées comprises) :
+  // +2 si elle a la spécialité visée, +1 si elle est polyvalente.
+  const wanted = REASON_SPECIALTY[reason] || 'general';
+  const scored = avail.map(ai => {
+    const spec = ai.specialty || [];
+    let score = 0;
+    if (spec.includes(wanted))    score += 2;
+    if (spec.includes('general')) score += 1;
+    return { ai, score };
+  });
+
+  // Garde les IAs les mieux notées, puis tourne entre elles (round-robin)
+  const best = Math.max(...scored.map(s=>s.score));
+  const top  = scored.filter(s=>s.score===best).map(s=>s.ai);
+  const ai   = top[_routeRR++ % top.length];
+  return { ai, reason };
 }
 
 // ═══════════════════════════════════════
@@ -1370,16 +1424,24 @@ async function send() {
   };
 
   let reply='', usedAI=chosenAI;
+  const errors=[];
   try {
     reply=await tryCall(chosenAI);
-  } catch {
-    // Fallback automatique
+  } catch(err1) {
+    // On garde la vraie erreur (utile pour déboguer) au lieu de l'avaler
+    errors.push(`${chosenAI.name} → ${err1.message}`);
+    console.warn(`[JARVIS] ${chosenAI.name} a échoué :`, err1.message);
+    // Fallback automatique sur les autres IAs disponibles
     const fallbacks=getAllAIs().filter(ai=>!!getKey(ai)&&ai.id!==chosenAI.id);
     let ok=false;
-    for (const fb of fallbacks) { try { reply=await tryCall(fb); usedAI=fb; ok=true; break; } catch {} }
+    for (const fb of fallbacks) {
+      try { reply=await tryCall(fb); usedAI=fb; ok=true; break; }
+      catch(err2) { errors.push(`${fb.name} → ${err2.message}`); console.warn(`[JARVIS] ${fb.name} a échoué :`, err2.message); }
+    }
     if (!ok) {
       removeTyping();
-      appendMsgDOM('assistant','❌ Toutes les IAs sont indisponibles.\n\nVérifie tes clés dans 🔑 Clés.',chosenAI);
+      const detail = errors.map(e=>'• '+e).join('\n');
+      appendMsgDOM('assistant',`❌ Aucune IA n'a pu répondre.\n\n**Erreurs réelles :**\n${detail}\n\nVérifie tes clés dans 🔑 Clés (clé valide ? quota dépassé ?).`,chosenAI);
       busy=false; document.getElementById('sendBtn').disabled=false; inp.focus(); return;
     }
     document.getElementById('fallbackBar').style.display='flex';
@@ -1404,7 +1466,7 @@ async function callGemini(key,sys,prevHist,image,currentText) {
   const contents=prevHist.map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:m.content}]}));
   const parts=[]; if(image)parts.push({inlineData:{mimeType:image.mimeType,data:image.base64}});
   parts.push({text:currentText||'Analyse.'}); contents.push({role:'user',parts});
-  const model=AIS.find(a=>a.id==='gemini')?.model||'gemini-2.5-flash-preview-04-17';
+  const model=AIS.find(a=>a.id==='gemini')?.model||'gemini-2.5-flash';
   const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({system_instruction:{parts:[{text:sys}]},contents,generationConfig:{temperature:0.7,maxOutputTokens:2048}})});
   if (!res.ok) { const e=await res.json().catch(()=>({})); throw new Error(e.error?.message||`HTTP ${res.status}`); }
   const d=await res.json();
@@ -1464,12 +1526,17 @@ async function changePwd() {
   const p1=document.getElementById('pwd1')?.value;
   const p2=document.getElementById('pwd2')?.value;
   const st=document.getElementById('pwdSt');
-  const stored=SEC.plain('pwdhash','');
-  if (stored && await CRYPTO.hashPwd(cur) !== stored) { st.textContent='❌ Mot de passe actuel incorrect'; st.className='st-err'; return; }
+  // Vérifie le mot de passe actuel (jeton témoin, ou ancien hash si non migré)
+  let okCur = await CRYPTO.checkVerifier(cur);
+  if (okCur === null) okCur = (await CRYPTO.hashPwd(cur) === SEC.plain('pwdhash',''));
+  if (!okCur) { st.textContent='❌ Mot de passe actuel incorrect'; st.className='st-err'; return; }
   if (p1.length<8) { st.textContent='❌ Minimum 8 caractères'; st.className='st-err'; return; }
   if (p1!==p2)     { st.textContent='❌ Différents'; st.className='st-err'; return; }
   st.textContent='⏳ Re-chiffrement...'; st.className='st-neu';
-  SEC.setPlain('pwdhash', await CRYPTO.hashPwd(p1)); _pwd=p1;
+  _pwd=p1;
+  // Nouveau jeton témoin et suppression de l'éventuel ancien hash faible
+  SEC.setPlain('verify', await CRYPTO.makeVerifier(p1));
+  try { localStorage.removeItem('jv8p_pwdhash'); } catch {}
   for (const ai of getAllAIs()) { const k=_cache.keys[ai.id]; if(k) await SEC.set('key_'+(ai.storKey||ai.id),k); }
   await SEC.set('customAIs',_cache.customAIs||[]); await SEC.set('projects',_cache.projects||[]); await SEC.set('memory',_cache.memory||[]); await SEC.set('ph_general',history);
   st.textContent='✅ Mot de passe changé et données re-chiffrées !'; st.className='st-ok';
@@ -1542,7 +1609,9 @@ async function exportData() {
   const data = {
     version: 'jarvis-v8',
     date: new Date().toISOString(),
-    pwdhash: SEC.plain('pwdhash',''),
+    salt: SEC.plain('salt',''),        // requis pour déchiffrer sur un autre appareil
+    verify: SEC.plain('verify',''),    // jeton témoin du mot de passe
+    pwdhash: SEC.plain('pwdhash',''),  // hérité (anciens comptes)
     sessDur: SEC.plain('sessDur','8'),
     name: SEC.plain('name',''),
     dismissedUpds: SEC.plain('dismissedUpds','[]'),
@@ -1579,6 +1648,8 @@ function importData() {
       const data = JSON.parse(text);
       if (data.version !== 'jarvis-v8') { toast('❌ Fichier invalide'); return; }
       // Restaure tout
+      if (data.salt)    SEC.setPlain('salt', data.salt);
+      if (data.verify)  SEC.setPlain('verify', data.verify);
       if (data.pwdhash) SEC.setPlain('pwdhash', data.pwdhash);
       if (data.sessDur) SEC.setPlain('sessDur', data.sessDur);
       if (data.name)    SEC.setPlain('name', data.name);
@@ -1603,8 +1674,8 @@ function importData() {
 // ═══════════════════════════════════════
 const IA_CATALOG_FULL = [
   // Gratuits
-  { name:'Gemini 2.5 Flash', company:'Google',    free:true,  speed:'⚡ Très rapide', best:'Vision, général, web',      link:'https://aistudio.google.com/app/apikey',      model:'gemini-2.5-flash-preview-04-17', url:'', type:'gemini', color:'#4285f4', icon:'🔵' },
-  { name:'LLaMA 4 Scout',    company:'Groq',      free:true,  speed:'⚡⚡ Ultra',     best:'Général, rapide',           link:'https://console.groq.com/keys',               model:'llama-4-scout-17b-16e-instruct', url:'https://api.groq.com/openai/v1/chat/completions', type:'openai', color:'#00e5ff', icon:'🔷' },
+  { name:'Gemini 2.5 Flash', company:'Google',    free:true,  speed:'⚡ Très rapide', best:'Vision, général, web',      link:'https://aistudio.google.com/app/apikey',      model:'gemini-2.5-flash', url:'', type:'gemini', color:'#4285f4', icon:'🔵' },
+  { name:'LLaMA 4 Scout',    company:'Groq',      free:true,  speed:'⚡⚡ Ultra',     best:'Général, rapide',           link:'https://console.groq.com/keys',               model:'meta-llama/llama-4-scout-17b-16e-instruct', url:'https://api.groq.com/openai/v1/chat/completions', type:'openai', color:'#00e5ff', icon:'🔷' },
   { name:'Mistral Large',    company:'Mistral',   free:false, speed:'🟡 Moyen',       best:'Français, code',            link:'https://console.mistral.ai/api-keys',         model:'mistral-large-latest', url:'https://api.mistral.ai/v1/chat/completions', type:'openai', color:'#ff6b35', icon:'🟠' },
   { name:'DeepSeek V3',      company:'DeepSeek',  free:true,  speed:'🟡 Moyen',       best:'Maths, science, code',      link:'https://platform.deepseek.com/api_keys',      model:'deepseek-chat', url:'https://api.deepseek.com/chat/completions', type:'openai', color:'#ab47bc', icon:'🟣' },
   { name:'LLaMA Cerebras',   company:'Cerebras',  free:true,  speed:'⚡⚡ Ultra',     best:'Vitesse absolue',           link:'https://cloud.cerebras.ai',                   model:'llama-3.3-70b', url:'https://api.cerebras.ai/v1/chat/completions', type:'openai', color:'#66bb6a', icon:'🟢' },
