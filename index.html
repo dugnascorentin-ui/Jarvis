@@ -292,6 +292,54 @@ a{color:var(--blue2);text-decoration:none}
 .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:900;padding:10px 18px;border-radius:20px;background:#065f46;border:1px solid #10b981;color:#6ee7b7;font-family:'JetBrains Mono',monospace;font-size:11px;box-shadow:0 8px 24px rgba(16,185,129,.3);animation:sup .3s ease;white-space:nowrap;pointer-events:none}
 #pwaBtn{position:fixed;bottom:calc(var(--nav-h) + 10px);right:16px;z-index:400;display:none;align-items:center;gap:7px;padding:9px 16px;border-radius:50px;background:linear-gradient(135deg,var(--blue3),var(--blue));color:#fff;font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;box-shadow:0 8px 24px rgba(59,130,246,.4);border:none;cursor:pointer}
 @media(max-width:680px){.sidebar{display:none}.mobile-nav{display:flex}.msg-content{max-width:88%}.topbar{padding:0 10px}.tb-btn{padding:4px 7px;font-size:9px}.tb-sec{display:none}.chat-wrap{padding-bottom:var(--nav-h)}}
+
+/* ═══════ REFONTE — POLISH & ANIMATIONS (itération 1) ═══════ */
+@keyframes gsweep{0%{background-position:0% 50%}100%{background-position:200% 50%}}
+@keyframes modalIn{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes popIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+
+/* Marque avec dégradé animé qui balaie doucement */
+.tb-name,.lock-name{background-size:200% auto;animation:gsweep 6s linear infinite}
+
+/* Feedback tactile universel sur les boutons */
+button{transition:transform .12s ease,background .18s,border-color .18s,color .18s,box-shadow .18s}
+button:active:not(:disabled){transform:scale(.96)}
+
+/* Modales : entrée fluide */
+.overlay.open .modal{animation:modalIn .3s cubic-bezier(.2,.8,.2,1)}
+
+/* Messages : apparition douce vers le haut */
+.msg{animation:fadeUp .28s cubic-bezier(.2,.8,.2,1)}
+
+/* Bouton d'envoi : halo lumineux */
+.ia-btn.send{box-shadow:0 4px 16px rgba(59,130,246,.35)}
+.ia-btn.send:hover:not(:disabled){box-shadow:0 6px 22px rgba(59,130,246,.55)}
+
+/* Chips & cartes : relief au survol */
+.chip:hover{transform:translateY(-2px);border-color:var(--blue);color:var(--blue2);box-shadow:0 6px 16px rgba(0,0,0,.3)}
+.btn-p:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(59,130,246,.28)}
+
+/* Champs : focus net et lisible */
+.chat-ta:focus,.finp:focus{box-shadow:0 0 0 3px rgba(59,130,246,.14);border-color:var(--blue)}
+
+/* Écran d'accueil : entrée + titre plus présent */
+.welcome{animation:popIn .4s cubic-bezier(.2,.8,.2,1)}
+.welcome h2{font-size:26px}
+
+/* Navigation mobile : effet verre, cibles plus grandes, indicateur actif */
+.mobile-nav{backdrop-filter:blur(18px);background:rgba(13,16,25,.85);border-top:1px solid var(--line2)}
+.mnav-btn{font-size:10px;padding:9px 4px;gap:4px}
+.mnav-btn .mnav-icon{font-size:19px;transition:transform .2s}
+.mnav-btn.active{color:var(--blue2)}
+.mnav-btn.active .mnav-icon{transform:translateY(-2px) scale(1.12)}
+.mnav-btn.active::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:26px;height:3px;border-radius:0 0 4px 4px;background:var(--blue);box-shadow:0 0 8px var(--blue)}
+
+/* Panneaux mobiles : glissement fluide */
+.mobile-panel{transition:transform .3s cubic-bezier(.2,.8,.2,1),opacity .3s}
+
+/* Accessibilité : respecte « réduire les animations » */
+@media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 </style>
 </head>
 <body>
@@ -319,7 +367,7 @@ a{color:var(--blue2);text-decoration:none}
       <button class="tb-btn has-upd" id="updBtn" onclick="openM('updateModal')">🔔 Updates</button>
       <button class="tb-btn purple" onclick="openM('pbModal')">✨ Prompt</button>
       <button class="tb-btn gold" onclick="openM('addModal')">➕ IA</button>
-      <button class="tb-btn" onclick="openIACatalog()" style="border-color:rgba(139,92,246,.4);color:#c4b5fd">🔍 IAs</button>
+      <button class="tb-btn" onclick="openIACatalog()" style="border-color:rgba(139,92,246,.4);color:#c4b5fd">🧠 Conseiller</button>
       <button class="tb-btn" onclick="openM('keysModal')">🔑 Clés</button>
       <button class="tb-btn" onclick="openM('settModal')">⚙</button>
     </div>
@@ -420,11 +468,12 @@ a{color:var(--blue2);text-decoration:none}
 
   <!-- MOBILE PANELS -->
   <div class="mobile-panel" id="mp-projects"><div class="mp-header"><div class="mp-title">📁 Projets</div><button class="btn-p purple" style="width:auto;padding:7px 14px;font-size:11px" onclick="openM('newProjModal')">➕</button></div><div class="mp-scroll" id="mp-proj-list"></div></div>
-  <div class="mobile-panel" id="mp-ais"><div class="mp-header"><div class="mp-title">🤖 IAs</div><button class="btn-p" style="width:auto;padding:7px 14px;font-size:11px" onclick="openM('addModal')">➕</button></div><div class="mp-scroll" id="mp-ai-list"></div></div>
+  <div class="mobile-panel" id="mp-ais"><div class="mp-header"><div class="mp-title">🤖 Mes IAs</div><button class="btn-p" style="width:auto;padding:7px 14px;font-size:11px" onclick="openM('addModal')">➕</button></div><div class="mp-scroll"><button class="btn-p purple" style="margin-bottom:12px" onclick="openIACatalog()">🧠 Conseiller d'IA — quelle IA pour mon besoin ?</button><div id="mp-ai-list"></div></div></div>
   <div class="mobile-panel" id="mp-updates"><div class="mp-header"><div class="mp-title">🔔 Mises à Jour IA</div></div><div class="mp-scroll" id="mp-updates-body"></div></div>
   <div class="mobile-panel" id="mp-settings">
     <div class="mp-header"><div class="mp-title">⚙️ Réglages</div></div>
     <div class="mp-scroll" style="display:flex;flex-direction:column;gap:10px;padding-bottom:20px">
+      <button class="btn-p purple" onclick="openIACatalog()">🧠 Conseiller d'IA</button>
       <button class="btn-p" onclick="openM('keysModal')">🔑 Clés API</button>
       <button class="btn-p purple" onclick="openM('pbModal')">✨ Prompt Builder</button>
       <button class="btn-p muted" onclick="openM('guideModal')">📖 Guide API</button>
