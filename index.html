@@ -462,15 +462,17 @@ a{color:var(--blue2);text-decoration:none}
 <!-- MODAL: Catalogue IAs -->
 <div class="overlay" id="iaCatalogModal" onclick="bgClose(event,'iaCatalogModal')">
   <div class="modal wide">
-    <div class="modal-h"><h3>🔍 TOUTES LES IAs DISPONIBLES</h3><button class="mx" onclick="closeM('iaCatalogModal')">✕</button></div>
+    <div class="modal-h"><h3>🧠 CONSEILLER D'IA</h3><button class="mx" onclick="closeM('iaCatalogModal')">✕</button></div>
     <div class="modal-body">
-      <input class="finp" placeholder="🔍 Recherche une IA, un usage..." oninput="renderIACatalog(this.value)" style="font-size:13px">
+      <div style="font-size:11px;color:var(--text2);margin-bottom:8px">Décris ton besoin ou ton projet — JARVIS te conseille les meilleures IA et te dit lesquelles il te manque.</div>
+      <input class="finp" id="adviseInput" placeholder="Ex : boutique en ligne, montage vidéo, trading, rédaction d'articles..." oninput="advise(this.value)" style="font-size:13px">
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <button class="pb-opt" onclick="renderIACatalog('gratuit');this.closest('.pb-options')?.querySelectorAll('.pb-opt').forEach(b=>b.classList.remove('selected'));this.classList.add('selected')">✅ Gratuit</button>
-        <button class="pb-opt" onclick="renderIACatalog('code');this.closest('.pb-options')?.querySelectorAll('.pb-opt').forEach(b=>b.classList.remove('selected'));this.classList.add('selected')">💻 Code</button>
-        <button class="pb-opt" onclick="renderIACatalog('vision');this.closest('.pb-options')?.querySelectorAll('.pb-opt').forEach(b=>b.classList.remove('selected'));this.classList.add('selected')">🖼️ Vision</button>
-        <button class="pb-opt" onclick="renderIACatalog('français');this.closest('.pb-options')?.querySelectorAll('.pb-opt').forEach(b=>b.classList.remove('selected'));this.classList.add('selected')">🇫🇷 Français</button>
-        <button class="pb-opt" onclick="renderIACatalog('');this.closest('.pb-options')?.querySelectorAll('.pb-opt').forEach(b=>b.classList.remove('selected'));this.classList.add('selected')">🔄 Toutes</button>
+        <button class="pb-opt" onclick="advise('boutique en ligne')">🛒 E-commerce</button>
+        <button class="pb-opt" onclick="advise('finance et trading')">💰 Finance</button>
+        <button class="pb-opt" onclick="advise('développement de code')">💻 Code</button>
+        <button class="pb-opt" onclick="advise('montage vidéo créatif')">🎬 Créatif</button>
+        <button class="pb-opt" onclick="advise('rédaction et marketing')">✍️ Rédaction</button>
+        <button class="pb-opt" onclick="advise('')">📚 Tout le catalogue</button>
       </div>
       <div id="iaCatalogBody"></div>
     </div>
@@ -1122,7 +1124,7 @@ function buildCatalog() {
 }
 
 function prefillAdd(ai) {
-  closeM('sugModal'); openM('addModal');
+  closeM('sugModal'); closeM('iaCatalogModal'); openM('addModal');
   ['name','icon','url','model','tag'].forEach(f=>{const el=document.getElementById('add-'+f);if(el)el.value=ai[f]||'';});
   document.getElementById('add-color').value=ai.color||'#60a5fa';
   if(document.getElementById('add-spec'))document.getElementById('add-spec').value=ai.specialty||'general';
@@ -1259,16 +1261,24 @@ function showFP(name,size,src,type) {
 function clearPending() { pendingImg=null; pendingFile=null; document.getElementById('filePrevArea').innerHTML=''; }
 
 // ═══════════════════════════════════════
-// AUTO ROUTING
+// AUTO ROUTING — meilleure IA par type (qualité d'abord, déterministe)
 // ═══════════════════════════════════════
-// Pointeur round-robin : répartit entre les IAs aussi compétentes
-// pour éviter de toujours choisir la même.
-let _routeRR = 0;
-
 // Spécialité visée pour chaque type d'intention détectée
 const REASON_SPECIALTY = {
   code:'code', science:'science', business:'business',
   web:'web', image:'image', robot:'code', general:'general',
+};
+
+// Classement par QUALITÉ (meilleure IA en premier) pour chaque type.
+// JARVIS prend la première de la liste qui possède une clé configurée.
+const QUALITY_ORDER = {
+  code:     ['mistral','deepseek','gemini','groq','cerebras'],
+  science:  ['deepseek','gemini','mistral','groq','cerebras'],
+  business: ['deepseek','gemini','mistral','groq','cerebras'],
+  robot:    ['mistral','deepseek','gemini','groq','cerebras'],
+  web:      ['gemini','deepseek','groq','cerebras','mistral'],
+  image:    ['gemini'], // seul Gemini gère la vision
+  general:  ['gemini','deepseek','mistral','groq','cerebras'], // qualité avant vitesse
 };
 
 function autoRoute(text) {
@@ -1299,22 +1309,23 @@ function autoRoute(text) {
     if (rx.test(t)) { reason = k; break; }
   }
 
-  // Score chaque IA disponible (IAs personnalisées comprises) :
-  // +2 si elle a la spécialité visée, +1 si elle est polyvalente.
-  const wanted = REASON_SPECIALTY[reason] || 'general';
-  const scored = avail.map(ai => {
-    const spec = ai.specialty || [];
-    let score = 0;
-    if (spec.includes(wanted))    score += 2;
-    if (spec.includes('general')) score += 1;
-    return { ai, score };
-  });
+  // 1) Meilleure IA disponible selon le classement qualité (déterministe)
+  const order = QUALITY_ORDER[reason] || QUALITY_ORDER.general;
+  for (const id of order) {
+    const ai = avail.find(a => a.id === id);
+    if (ai) return { ai, reason };
+  }
 
-  // Garde les IAs les mieux notées, puis tourne entre elles (round-robin)
-  const best = Math.max(...scored.map(s=>s.score));
-  const top  = scored.filter(s=>s.score===best).map(s=>s.ai);
-  const ai   = top[_routeRR++ % top.length];
-  return { ai, reason };
+  // 2) Repli : aucune IA du classement dispo (ex. seulement des IAs perso)
+  //    → on prend la mieux notée selon sa spécialité, sans aléatoire.
+  const wanted = REASON_SPECIALTY[reason] || 'general';
+  let bestAI = avail[0], bestScore = -1;
+  for (const ai of avail) {
+    const spec = ai.specialty || [];
+    const score = (spec.includes(wanted) ? 2 : 0) + (spec.includes('general') ? 1 : 0);
+    if (score > bestScore) { bestScore = score; bestAI = ai; }
+  }
+  return { ai: bestAI, reason };
 }
 
 // ═══════════════════════════════════════
@@ -1705,35 +1716,140 @@ const IA_CATALOG_FULL = [
   { name:'Grok 3',           company:'xAI',       free:false, speed:'🟢 Rapide',      best:'Actualités, humour',        link:'https://console.x.ai',                        model:'grok-3', url:'https://api.x.ai/v1/chat/completions', type:'openai', color:'#fff', icon:'✖️' },
 ];
 
+// ─── Forces de chaque IA (étiquettes de capacités) ───
+const AI_TAGS = {
+  'Gemini 2.5 Flash':['general','vision','web','writing','fast','multilingual'],
+  'LLaMA 4 Scout':   ['general','fast','writing'],
+  'Mistral Large':   ['code','writing','french','reasoning','business'],
+  'DeepSeek V3':     ['math','science','code','reasoning','data'],
+  'LLaMA Cerebras':  ['general','fast'],
+  'GPT-4o':          ['general','vision','writing','reasoning','code','business'],
+  'Claude Sonnet 4': ['reasoning','code','writing','longdoc','analysis'],
+  'Codestral':       ['code'],
+  'Gemini 2.5 Pro':  ['reasoning','longdoc','analysis','vision','data'],
+  'Mistral Medium 3':['general','writing','french','value'],
+  'Qwen 2.5':        ['multilingual','code','general'],
+  'Grok 3':          ['web','news','general','creative'],
+};
+// Note de qualité indicative (sert de départage)
+const AI_QUALITY = {
+  'GPT-4o':9,'Claude Sonnet 4':9,'Gemini 2.5 Pro':9,'DeepSeek V3':8,'Mistral Large':8,
+  'Gemini 2.5 Flash':8,'Codestral':8,'Grok 3':7,'Qwen 2.5':7,'Mistral Medium 3':7,
+  'LLaMA 4 Scout':7,'LLaMA Cerebras':6,
+};
+const TAG_LABELS = {
+  general:'polyvalent', vision:'vision/image', web:'web & actualités', writing:'rédaction',
+  fast:'ultra rapide', multilingual:'multilingue', code:'code', french:'français',
+  reasoning:'raisonnement', business:'business', math:'maths', science:'science',
+  data:'données', longdoc:'documents longs', analysis:'analyse', creative:'créatif',
+  value:'rapport qualité/prix', news:'actualités',
+};
+// ─── Domaines → capacités recherchées (couvre large + repli universel) ───
+const DOMAIN_MAP = [
+  { kw:['boutique','ecommerce','e-commerce','shop','vente','magasin','dropship','produit'], tags:['writing','business','vision','data'], label:'E-commerce' },
+  { kw:['finance','trading','bourse','crypto','invest','action','comptab','budget','fiscal','banque'], tags:['data','reasoning','business','math'], label:'Finance & trading' },
+  { kw:['code','dev','programm','app','site','logiciel','script','api','backend','frontend'], tags:['code','reasoning'], label:'Code & développement' },
+  { kw:['video','montage','film','youtube','reel','tiktok','clip'], tags:['creative','vision','writing'], label:'Vidéo & créatif' },
+  { kw:['image','photo','logo','design','graph','illustration','dessin','visuel'], tags:['vision','creative'], label:'Design & image' },
+  { kw:['redaction','ecriture','article','blog','copywriting','marketing','email','newsletter','texte','post','contenu'], tags:['writing','creative'], label:'Rédaction & marketing' },
+  { kw:['science','recherche','physique','chimie','biolog','math','equation','statistiq'], tags:['science','math','reasoning'], label:'Science & maths' },
+  { kw:['juridique','droit','contrat','loi','legal','avocat'], tags:['reasoning','longdoc','writing'], label:'Juridique' },
+  { kw:['sante','medical','medecin','nutrition','sport','fitness','bien-etre'], tags:['reasoning','science','writing'], label:'Santé & bien-être' },
+  { kw:['traduction','traduire','langue','multilingue'], tags:['multilingual','writing'], label:'Traduction & langues' },
+  { kw:['actualite','news','veille','politique'], tags:['web','news'], label:'Actualités & veille' },
+  { kw:['donnee','data','analyse','excel','tableur','dataset','sql'], tags:['data','reasoning','code'], label:'Données & analyse' },
+  { kw:['education','cours','apprendre','etude','formation','revis','prof'], tags:['writing','reasoning'], label:'Éducation' },
+  { kw:['document','rapport','resume','pdf','livre','these','memoire'], tags:['longdoc','analysis','writing'], label:'Documents longs' },
+  { kw:['strateg','complexe','reflexion','probleme','raisonn','decision'], tags:['reasoning','analysis'], label:'Raisonnement complexe' },
+];
+
 function openIACatalog() {
   openM('iaCatalogModal');
-  renderIACatalog('');
+  const inp = document.getElementById('adviseInput'); if (inp) inp.value='';
+  advise('');
 }
 
-function renderIACatalog(filter) {
-  const body = document.getElementById('iaCatalogBody');
-  if (!body) return;
-  const f = filter.toLowerCase();
-  const list = IA_CATALOG_FULL.filter(ai =>
-    !f || ai.name.toLowerCase().includes(f) || ai.company.toLowerCase().includes(f) || ai.best.toLowerCase().includes(f)
-  );
-  if (!list.length) { body.innerHTML = '<div style="color:var(--text3);text-align:center;padding:20px;font-family:\'JetBrains Mono\',monospace;font-size:11px">Aucun résultat</div>'; return; }
-  body.innerHTML = list.map(ai => `
+// Statut d'une IA du catalogue chez l'utilisateur
+function ownedStatus(name) {
+  const ai = getAllAIs().find(a => a.name === name);
+  return { owned: !!ai, hasKey: !!(ai && getKey(ai)) };
+}
+
+// Carte d'une IA (avec statut « tu l'as / manquante » et actions adaptées)
+function aiCardHTML(ai, reasonTxt) {
+  const st = ownedStatus(ai.name);
+  let badge, actions;
+  if (st.hasKey) {
+    badge = `<span style="padding:2px 8px;border-radius:10px;font-size:9px;background:rgba(16,185,129,.12);color:var(--green);border:1px solid rgba(16,185,129,.25);font-family:'JetBrains Mono',monospace">✓ TU L'AS</span>`;
+    actions = `<div style="font-size:10px;color:var(--green);font-family:'JetBrains Mono',monospace;padding:4px 0">✅ Déjà active — JARVIS l'utilisera quand c'est la meilleure.</div>`;
+  } else if (st.owned) {
+    badge = `<span style="padding:2px 8px;border-radius:10px;font-size:9px;background:rgba(245,158,11,.12);color:var(--gold2);border:1px solid rgba(245,158,11,.25);font-family:'JetBrains Mono',monospace">⚠ CLÉ MANQUANTE</span>`;
+    actions = `<div style="display:flex;gap:6px">
+        <a href="${ai.link}" target="_blank" style="flex:1;padding:6px;border-radius:6px;background:var(--bg3);border:1px solid var(--line2);color:var(--blue2);font-family:'JetBrains Mono',monospace;font-size:10px;text-align:center;text-decoration:none">🔑 Obtenir la clé</a>
+        <button onclick="closeM('iaCatalogModal');openM('keysModal')" style="flex:1;padding:6px;border-radius:6px;background:linear-gradient(135deg,var(--blue3),var(--blue));color:#fff;font-family:'JetBrains Mono',monospace;font-size:10px;border:none;cursor:pointer">🔓 Configurer</button>
+      </div>`;
+  } else {
+    badge = `<span style="padding:2px 8px;border-radius:10px;font-size:9px;background:${ai.free?'rgba(16,185,129,.1)':'rgba(245,158,11,.1)'};color:${ai.free?'var(--green)':'var(--gold2)'};border:1px solid var(--line2);font-family:'JetBrains Mono',monospace">${ai.free?'GRATUIT':'PAYANT'}</span>`;
+    const payload = JSON.stringify({name:ai.name,icon:ai.icon,color:ai.color,url:ai.url,model:ai.model,specialty:"general",tag:ai.company+" · "+ai.best.split(",")[0],link:ai.link});
+    actions = `<div style="display:flex;gap:6px">
+        <a href="${ai.link}" target="_blank" style="flex:1;padding:6px;border-radius:6px;background:var(--bg3);border:1px solid var(--line2);color:var(--blue2);font-family:'JetBrains Mono',monospace;font-size:10px;text-align:center;text-decoration:none">🔑 Obtenir la clé</a>
+        <button onclick='prefillAdd(${payload})' style="flex:1;padding:6px;border-radius:6px;background:linear-gradient(135deg,var(--blue3),var(--blue));color:#fff;font-family:'JetBrains Mono',monospace;font-size:10px;border:none;cursor:pointer">➕ Ajouter</button>
+      </div>`;
+  }
+  return `
     <div style="display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:var(--r);background:var(--bg2);border:1px solid var(--line);margin-bottom:8px">
       <div style="display:flex;align-items:center;gap:8px">
         <span style="font-size:18px">${ai.icon}</span>
-        <div style="flex:1">
-          <div style="font-size:12px;font-weight:700;color:${ai.color}">${ai.name}</div>
-          <div style="font-size:9px;color:var(--text3);font-family:'JetBrains Mono',monospace">${ai.company} · ${ai.speed}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:700;color:${ai.color}">${escHtml(ai.name)}</div>
+          <div style="font-size:9px;color:var(--text3);font-family:'JetBrains Mono',monospace">${escHtml(ai.company)} · ${ai.speed}</div>
         </div>
-        <span style="padding:2px 8px;border-radius:10px;font-family:'JetBrains Mono',monospace;font-size:9px;background:${ai.free?'rgba(16,185,129,.1)':'rgba(245,158,11,.1)'};color:${ai.free?'var(--green)':'var(--gold2)'};border:1px solid ${ai.free?'rgba(16,185,129,.2)':'rgba(245,158,11,.2)'}">${ai.free?'GRATUIT':'PAYANT'}</span>
+        ${badge}
       </div>
-      <div style="font-size:11px;color:var(--text2)">✨ ${ai.best}</div>
-      <div style="display:flex;gap:6px">
-        <a href="${ai.link}" target="_blank" style="flex:1;padding:6px;border-radius:6px;background:var(--bg3);border:1px solid var(--line2);color:var(--blue2);font-family:'JetBrains Mono',monospace;font-size:10px;text-align:center;text-decoration:none">🔑 Obtenir la clé</a>
-        <button onclick='prefillAdd(${JSON.stringify({name:ai.name,icon:ai.icon,color:ai.color,url:ai.url,model:ai.model,specialty:"general",tag:ai.company+" · "+ai.best.split(",")[0],link:ai.link})})' style="flex:1;padding:6px;border-radius:6px;background:linear-gradient(135deg,var(--blue3),var(--blue));color:#fff;font-family:'JetBrains Mono',monospace;font-size:10px;border:none;cursor:pointer">➕ Ajouter</button>
-      </div>
-    </div>`).join('');
+      ${reasonTxt?`<div style="font-size:11px;color:var(--blue2)">🎯 ${reasonTxt}</div>`:`<div style="font-size:11px;color:var(--text2)">✨ ${escHtml(ai.best)}</div>`}
+      ${actions}
+    </div>`;
+}
+
+// Conseiller : analyse le besoin → meilleures IA classées, avec statut
+function advise(query) {
+  const body = document.getElementById('iaCatalogBody');
+  if (!body) return;
+  const q = (query||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+
+  // Vide → tout le catalogue
+  if (!q) {
+    body.innerHTML = `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">Toutes les IA disponibles. Décris un besoin ci-dessus pour une reco ciblée.</div>`
+      + IA_CATALOG_FULL.map(ai => aiCardHTML(ai, null)).join('');
+    return;
+  }
+
+  // Domaines détectés → capacités recherchées
+  const matched = DOMAIN_MAP.filter(d => d.kw.some(k => q.includes(k)));
+  let tags = [...new Set(matched.flatMap(d => d.tags))];
+  const usedFallback = !tags.length;
+  if (usedFallback) tags = ['general','reasoning','writing']; // repli universel
+
+  // Classe les IA par pertinence (recouvrement de capacités) puis qualité
+  const scored = IA_CATALOG_FULL.map(ai => {
+    const t = AI_TAGS[ai.name] || [];
+    const overlap = t.filter(x => tags.includes(x));
+    return { ai, overlap, score: overlap.length*10 + (AI_QUALITY[ai.name]||5) };
+  }).filter(s => s.overlap.length > 0)
+    .sort((a,b) => b.score - a.score)
+    .slice(0, 6);
+
+  const domainTxt = matched.length ? matched.map(d=>d.label).join(', ') : 'ta demande';
+  const tagTxt = tags.map(t => TAG_LABELS[t]||t).join(' · ');
+  const header = `<div style="padding:10px 12px;border-radius:var(--r);background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);margin-bottom:10px">
+      <div style="font-size:12px;font-weight:700;color:var(--blue2)">🧠 Pour ${escHtml(domainTxt)}</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:2px">Capacités clés : ${escHtml(tagTxt)}${usedFallback?' (reco générale)':''}</div>
+    </div>`;
+
+  body.innerHTML = header + scored.map(s => {
+    const why = s.overlap.map(t => TAG_LABELS[t]||t).slice(0,3).join(', ');
+    return aiCardHTML(s.ai, `Forte en ${why}`);
+  }).join('');
 }
 
 </script>
