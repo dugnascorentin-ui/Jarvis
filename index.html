@@ -767,6 +767,8 @@ function startSessTimer() {
 
 function lockNow() {
   clearInterval(sessInterval);
+  // En mode DEV (sans mot de passe), on ne verrouille jamais : on relance la session.
+  if (typeof DEV_NO_LOCK !== 'undefined' && DEV_NO_LOCK) { startSession(DEV_PWD); return; }
   _pwd = null; _cache = { keys:{}, projects:null, memory:null, customAIs:null };
   history = []; manualAI = null;
   document.getElementById('app').style.display = 'none';
@@ -1604,7 +1606,18 @@ window.addEventListener('appinstalled',()=>document.getElementById('pwaBtn').sty
 // ═══════════════════════════════════════
 // BOOT
 // ═══════════════════════════════════════
-buildLockForm();
+// ⚠️ MODE DEV — sans mot de passe (pratique pendant le développement).
+// Repasse à false pour réactiver l'écran de verrouillage en production.
+const DEV_NO_LOCK = true;
+const DEV_PWD = 'jarvis-dev-mode';
+
+if (DEV_NO_LOCK) {
+  // Démarre directement, sans demander de mot de passe.
+  // (Le chiffrement reste actif mais avec une clé interne fixe → non protégé.)
+  startSession(DEV_PWD);
+} else {
+  buildLockForm();
+}
 
 // ═══════════════════════════════════════
 // EXPORT / IMPORT DONNÉES
