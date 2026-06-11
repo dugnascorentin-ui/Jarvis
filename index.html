@@ -293,52 +293,83 @@ a{color:var(--blue2);text-decoration:none}
 #pwaBtn{position:fixed;bottom:calc(var(--nav-h) + 10px);right:16px;z-index:400;display:none;align-items:center;gap:7px;padding:9px 16px;border-radius:50px;background:linear-gradient(135deg,var(--blue3),var(--blue));color:#fff;font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;box-shadow:0 8px 24px rgba(59,130,246,.4);border:none;cursor:pointer}
 @media(max-width:680px){.sidebar{display:none}.mobile-nav{display:flex}.msg-content{max-width:88%}.topbar{padding:0 14px;height:54px}.tb-right{display:none}.tb-sec{display:none}.route-bar{display:none}.proj-bar{padding:9px 16px}.chat-wrap{padding-bottom:var(--nav-h)}}
 
-/* ═══════ REFONTE — POLISH & ANIMATIONS (itération 1) ═══════ */
+/* ═══════ REFONTE APPLE — itération 2 ═══════ */
 @keyframes gsweep{0%{background-position:0% 50%}100%{background-position:200% 50%}}
 @keyframes modalIn{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
-@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-@keyframes popIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+@keyframes heroIn{0%{opacity:0;transform:translateY(24px) scale(.96)}100%{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes drift1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(40px,30px) scale(1.15)}}
+@keyframes drift2{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-50px,-25px) scale(1.1)}}
 
-/* Marque avec dégradé animé qui balaie doucement */
+/* Fond vivant : deux halos de couleur qui dérivent lentement (style aurora) */
+.bg-fx::before{background:radial-gradient(ellipse 60% 45% at 25% 18%,rgba(59,130,246,.13) 0%,transparent 60%),radial-gradient(ellipse 50% 40% at 78% 82%,rgba(139,92,246,.10) 0%,transparent 55%);animation:drift1 18s ease-in-out infinite}
+.bg-fx::after{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 40% 35% at 70% 25%,rgba(245,158,11,.05) 0%,transparent 55%);animation:drift2 24s ease-in-out infinite}
+
+/* Marque : dégradé animé */
 .tb-name,.lock-name{background-size:200% auto;animation:gsweep 6s linear infinite}
 
-/* Feedback tactile universel sur les boutons */
+/* Feedback tactile universel */
 button{transition:transform .12s ease,background .18s,border-color .18s,color .18s,box-shadow .18s}
 button:active:not(:disabled){transform:scale(.96)}
 
-/* Modales : entrée fluide */
-.overlay.open .modal{animation:modalIn .3s cubic-bezier(.2,.8,.2,1)}
+/* ── ACCUEIL HÉRO façon Apple ── */
+.welcome{gap:20px;animation:heroIn .6s cubic-bezier(.2,.8,.2,1)}
+.welcome h2{font-size:42px;font-weight:800;letter-spacing:-1px;background:linear-gradient(135deg,#60a5fa 10%,#a78bfa 50%,#fbbf24 90%);background-size:200% auto;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:gsweep 8s linear infinite}
+.welcome p{font-size:15px;max-width:340px;color:var(--text2)}
+.chips{gap:10px;max-width:560px}
+.chip{padding:12px 18px;border-radius:16px;font-size:14px;font-weight:500;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(12px);color:var(--text)}
+.chip:hover{transform:translateY(-3px);border-color:rgba(96,165,250,.5);box-shadow:0 10px 28px rgba(0,0,0,.35)}
+.chip:nth-child(1){animation:fadeUp .5s .10s cubic-bezier(.2,.8,.2,1) both}
+.chip:nth-child(2){animation:fadeUp .5s .16s cubic-bezier(.2,.8,.2,1) both}
+.chip:nth-child(3){animation:fadeUp .5s .22s cubic-bezier(.2,.8,.2,1) both}
+.chip:nth-child(4){animation:fadeUp .5s .28s cubic-bezier(.2,.8,.2,1) both}
+.chip:nth-child(5){animation:fadeUp .5s .34s cubic-bezier(.2,.8,.2,1) both}
+.chip:nth-child(6){animation:fadeUp .5s .40s cubic-bezier(.2,.8,.2,1) both}
 
-/* Messages : apparition douce vers le haut */
-.msg{animation:fadeUp .28s cubic-bezier(.2,.8,.2,1)}
+/* ── BULLES façon iMessage ── */
+.msg{animation:fadeUp .32s cubic-bezier(.2,.8,.2,1)}
+.msg-bubble{font-size:15px;line-height:1.65;padding:12px 16px;border-radius:20px}
+.msg.user .msg-bubble{background:linear-gradient(135deg,#3b82f6,#2563eb);border:none;color:#fff;border-top-right-radius:6px;box-shadow:0 6px 18px rgba(37,99,235,.30)}
+.msg.user .msg-bubble strong{color:#fff}
+.msg.assistant .msg-bubble{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.07);backdrop-filter:blur(10px);border-top-left-radius:6px}
+.msg-av{width:32px;height:32px;border-radius:50%}
+.messages{padding:20px 16px;gap:16px}
 
-/* Bouton d'envoi : halo lumineux */
-.ia-btn.send{box-shadow:0 4px 16px rgba(59,130,246,.35)}
-.ia-btn.send:hover:not(:disabled){box-shadow:0 6px 22px rgba(59,130,246,.55)}
+/* ── BARRE DE SAISIE : pilule de verre flottante ── */
+.input-bar{background:transparent;border-top:none;padding:8px 14px calc(12px + env(safe-area-inset-bottom,0px))}
+.input-wrap{border-radius:26px;padding:10px 12px;background:rgba(22,27,42,.85);border:1px solid rgba(255,255,255,.09);backdrop-filter:blur(20px);box-shadow:0 10px 34px rgba(0,0,0,.45)}
+.input-wrap:focus-within{border-color:rgba(96,165,250,.55);box-shadow:0 10px 34px rgba(0,0,0,.45),0 0 0 3px rgba(59,130,246,.12)}
+.chat-ta{font-size:15px}
+.ia-btn{width:36px;height:36px;border-radius:50%;font-size:15px}
+.ia-btn.send{box-shadow:0 4px 16px rgba(59,130,246,.4)}
+.ia-btn.send:hover:not(:disabled){box-shadow:0 6px 22px rgba(59,130,246,.6)}
+.input-hint{display:none}
 
-/* Chips & cartes : relief au survol */
-.chip:hover{transform:translateY(-2px);border-color:var(--blue);color:var(--blue2);box-shadow:0 6px 16px rgba(0,0,0,.3)}
-.btn-p:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(59,130,246,.28)}
+/* ── MODALES : verre + entrée fluide ── */
+.modal{border-radius:24px;background:rgba(13,16,25,.92);backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,.09)}
+.overlay.open .modal{animation:modalIn .32s cubic-bezier(.2,.8,.2,1)}
 
-/* Champs : focus net et lisible */
-.chat-ta:focus,.finp:focus{box-shadow:0 0 0 3px rgba(59,130,246,.14);border-color:var(--blue)}
-
-/* Écran d'accueil : entrée + titre plus présent */
-.welcome{animation:popIn .4s cubic-bezier(.2,.8,.2,1)}
-.welcome h2{font-size:26px}
-
-/* Navigation mobile : effet verre, cibles plus grandes, indicateur actif */
-.mobile-nav{backdrop-filter:blur(18px);background:rgba(13,16,25,.85);border-top:1px solid var(--line2)}
-.mnav-btn{font-size:10px;padding:9px 4px;gap:4px}
-.mnav-btn .mnav-icon{font-size:19px;transition:transform .2s}
+/* ── NAVIGATION MOBILE : verre iOS ── */
+.mobile-nav{backdrop-filter:blur(22px);background:rgba(10,13,20,.78);border-top:1px solid rgba(255,255,255,.07)}
+.mnav-btn{font-size:10px;padding:9px 4px;gap:4px;font-family:'Space Grotesk',sans-serif;letter-spacing:0}
+.mnav-btn .mnav-icon{font-size:20px;transition:transform .22s cubic-bezier(.2,.8,.2,1)}
 .mnav-btn.active{color:var(--blue2)}
-.mnav-btn.active .mnav-icon{transform:translateY(-2px) scale(1.12)}
-.mnav-btn.active::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:26px;height:3px;border-radius:0 0 4px 4px;background:var(--blue);box-shadow:0 0 8px var(--blue)}
+.mnav-btn.active .mnav-icon{transform:translateY(-2px) scale(1.15)}
+.mnav-btn.active::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:28px;height:3px;border-radius:0 0 4px 4px;background:var(--blue);box-shadow:0 0 10px var(--blue)}
+
+/* ── EN-TÊTE : verre discret ── */
+.topbar{background:rgba(10,13,20,.7);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,.06)}
+.proj-bar{background:transparent;border-bottom:1px solid rgba(255,255,255,.05)}
+.proj-bar-name{font-size:14px}
+.proj-bar-sub{font-size:10px}
+
+/* Champs : focus doux */
+.finp:focus{box-shadow:0 0 0 3px rgba(59,130,246,.14);border-color:var(--blue)}
 
 /* Panneaux mobiles : glissement fluide */
 .mobile-panel{transition:transform .3s cubic-bezier(.2,.8,.2,1),opacity .3s}
 
-/* Accessibilité : respecte « réduire les animations » */
+/* Accessibilité */
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 </style>
 </head>
@@ -419,8 +450,8 @@ button:active:not(:disabled){transform:scale(.96)}
       <div class="messages" id="messages">
         <div class="welcome" id="welcomeEl">
           <div class="reactor" style="width:56px;height:56px"><div class="rr rr1"></div><div class="rr rr2"></div><div class="rr rr3"></div><div class="rcore" style="width:18px;height:18px"></div></div>
-          <h2>JARVIS v8</h2>
-          <p id="welcomeMsg">Configure tes <strong style="color:var(--blue2)">🔑 Clés API</strong> pour commencer.</p>
+          <h2>Bonjour.</h2>
+          <p id="welcomeMsg">Pose-moi n'importe quelle question — je m'occupe du reste.</p>
           <div class="chips">
             <span class="chip" onclick="sendChip('Crée une app web complète avec login')">🌐 App web</span>
             <span class="chip" onclick="sendChip('Actualités mondiales importantes')">📰 Actualités</span>
@@ -950,8 +981,8 @@ function renderMessages() {
   if (!history.length) {
     msgs.innerHTML = `<div class="welcome" id="welcomeEl">
       <div class="reactor" style="width:56px;height:56px"><div class="rr rr1"></div><div class="rr rr2"></div><div class="rr rr3"></div><div class="rcore" style="width:18px;height:18px"></div></div>
-      <h2>${currentProject==='general' ? 'CHAT GÉNÉRAL' : 'PROJET ACTIF'}</h2>
-      <p>Pose ta question — JARVIS choisit la meilleure IA.</p></div>`;
+      <h2>${currentProject==='general' ? 'Bonjour.' : 'Projet actif'}</h2>
+      <p>Pose-moi n'importe quelle question — je m'occupe du reste.</p></div>`;
   } else {
     msgs.innerHTML = '';
     history.forEach(m => {
