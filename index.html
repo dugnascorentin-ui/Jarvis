@@ -688,7 +688,7 @@ function optimizePrompt(text) {
 }
 
 // ── MODE PROMPTEUR (validation avant envoi) ──
-const PROMPT_ENGINEER = "Tu es un expert mondial en prompt engineering. On te donne la demande brute d'un utilisateur. Ta mission : la reformuler en un PROMPT D'INSTRUCTION adressé À UNE IA — pas une réponse destinée à l'utilisateur.\n\nRÈGLES STRICTES :\n- Le prompt PARLE à l'IA et lui DONNE des ordres : commence par définir son rôle (« Agis comme... » ou « Tu es... »), puis donne les instructions à l'impératif (Rédige, Crée, Analyse, Fournis, Liste...).\n- NE réponds PAS à la demande, NE donne AUCUN conseil à l'utilisateur. N'écris JAMAIS « Pour faire X, il faut... ».\n- Précise le contexte utile, le format de sortie attendu et les contraintes.\n- Écris en français. Renvoie UNIQUEMENT le texte du prompt, sans guillemets ni commentaire.\n\nEXEMPLE —\nDemande : « crée une boutique en ligne rentable »\nPrompt : Agis comme un expert en e-commerce et en growth marketing. Élabore un plan d'action complet et chiffré pour lancer une boutique en ligne rentable à partir de zéro. Couvre le choix de la niche, la plateforme, le sourcing produit, la stratégie d'acquisition client, le budget de démarrage et la rentabilité prévisionnelle. Présente des étapes priorisées et un tableau budgétaire.";
+const PROMPT_ENGINEER = "Tu es un expert mondial en prompt engineering. On te donne la demande brute d'un utilisateur. Ta mission : la reformuler en un PROMPT D'INSTRUCTION adressé À UNE IA — pas une réponse destinée à l'utilisateur.\n\nRÈGLES STRICTES :\n- Le prompt PARLE à l'IA et lui DONNE des ordres : commence par définir son rôle (« Agis comme... » ou « Tu es... »), puis donne les instructions à l'impératif (Rédige, Crée, Analyse, Fournis, Liste...).\n- NE réponds PAS à la demande, NE donne AUCUN conseil à l'utilisateur. N'écris JAMAIS « Pour faire X, il faut... ».\n- Précise le contexte utile, le format de sortie attendu et les contraintes.\n- Écris en français. Renvoie UNIQUEMENT le texte du prompt, sans guillemets ni commentaire.\n- Si une conversation est déjà en cours, rédige le prompt comme une SUITE cohérente qui s'appuie sur les échanges précédents (ne recommence pas une nouvelle demande indépendante).\n\nEXEMPLE —\nDemande : « crée une boutique en ligne rentable »\nPrompt : Agis comme un expert en e-commerce et en growth marketing. Élabore un plan d'action complet et chiffré pour lancer une boutique en ligne rentable à partir de zéro. Couvre le choix de la niche, la plateforme, le sourcing produit, la stratégie d'acquisition client, le budget de démarrage et la rentabilité prévisionnelle. Présente des étapes priorisées et un tableau budgétaire.";
 let promptMode = false;
 let _bypassReview = false;
 let _promptOriginal = '';
@@ -710,6 +710,16 @@ async function askOnce(ai, sys, userMsg) {
   return txt;
 }
 
+// Résumé des derniers échanges, pour que le prompteur reste cohérent en cours de conversation
+function recentContext(n = 4) {
+  if (!history.length) return '';
+  return history.slice(-n).map(m => {
+    const who = m.role === 'assistant' ? 'JARVIS' : 'Toi';
+    const c = (m.content || '').replace(/\s+/g, ' ').slice(0, 300);
+    return `- ${who} : ${c}`;
+  }).join('\n');
+}
+
 // Génère un prompt optimisé via une IA rapide disponible
 async function genOptimizedPrompt(text, variation) {
   const avail = getAllAIs().filter(a => !!getKey(a));
@@ -718,7 +728,14 @@ async function genOptimizedPrompt(text, variation) {
   let ai = null; for (const id of fast) { ai = avail.find(a => a.id===id); if (ai) break; } if (!ai) ai = avail[0];
   let sys = PROMPT_ENGINEER;
   if (variation) sys += " Propose une variante sensiblement différente et encore meilleure que la précédente.";
-  const userMsg = `DEMANDE BRUTE À TRANSFORMER EN PROMPT (ne surtout pas y répondre) :\n"""${text}"""\n\nÉcris UNIQUEMENT le prompt d'instruction destiné à l'IA, en commençant par son rôle (« Agis comme... »).`;
+  const ctx = recentContext();
+  let userMsg;
+  if (ctx) {
+    // Conversation en cours → le prompt doit être une SUITE cohérente
+    userMsg = `CONVERSATION EN COURS :\n${ctx}\n\nNOUVEAU MESSAGE de l'utilisateur à transformer en prompt, EN CONTINUITÉ de la conversation ci-dessus (ne repars pas de zéro, tiens compte de ce qui a déjà été dit, ne répète pas le rôle si ce n'est pas utile) :\n"""${text}"""\n\nÉcris UNIQUEMENT le prompt d'instruction destiné à l'IA.`;
+  } else {
+    userMsg = `DEMANDE BRUTE À TRANSFORMER EN PROMPT (ne surtout pas y répondre) :\n"""${text}"""\n\nÉcris UNIQUEMENT le prompt d'instruction destiné à l'IA, en commençant par son rôle (« Agis comme... »).`;
+  }
   let out = (await askOnce(ai, sys, userMsg)).trim();
   // Filet de sécurité : retire d'éventuels guillemets/préfixes parasites
   out = out.replace(/^["«»\s]+|["«»\s]+$/g,'').replace(/^(prompt\s*:?\s*)/i,'');
