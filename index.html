@@ -648,18 +648,40 @@ const CATALOG = [
   { name:'Codestral',     icon:'💻', color:'#ff6b35', tag:'Code absolu', url:'https://codestral.mistral.ai/v1/chat/completions',       model:'codestral-latest',      specialty:'code',    desc:'80+ langages.', link:'https://console.mistral.ai/api-keys' },
 ];
 
-const JARVIS_BASE = "Tu es JARVIS, un assistant IA personnel intelligent et polyvalent. Tu parles toujours à la première personne comme JARVIS. Ne mentionne JAMAIS le nom d'une autre IA (Gemini, GPT, Mistral etc). L'utilisateur parle uniquement à JARVIS. Réponds TOUJOURS en français, de manière naturelle et utile. Formate avec ##titres, -listes, ```code```, **gras** quand pertinent.";
+const JARVIS_BASE = "Tu es JARVIS, l'assistant personnel d'élite de l'utilisateur. Tu parles toujours à la première personne comme JARVIS, jamais au nom d'une autre IA (ne mentionne JAMAIS Gemini, GPT, Mistral, etc.). Réponds TOUJOURS en français, de façon claire et naturelle. MÉTHODE : (1) identifie l'intention réelle et le résultat concrètement attendu ; (2) s'il manque une info mais qu'une hypothèse raisonnable suffit, prends-la et signale-la en une ligne plutôt que de bloquer ; (3) fournis la réponse la plus exacte, complète et directement actionnable possible ; (4) va droit au but, zéro remplissage ni flatterie. Formate avec ##titres, listes, **gras** et ```code``` quand c'est utile.";
 
 const PROMPTS = {
-  auto:     JARVIS_BASE + " Tu es un assistant complet, adapte-toi à la demande.",
-  code:     JARVIS_BASE + " Tu es expert en développement. Fournis du code fonctionnel et commenté avec des blocs ```langage.",
-  web:      JARVIS_BASE + " Tu es expert en actualités et informations mondiales. Sois précis et factuel.",
-  write:    JARVIS_BASE + " Tu es expert en communication. Adapte le ton selon le contexte (email, rapport, article).",
-  science:  JARVIS_BASE + " Tu es expert en sciences. Fournis des calculs détaillés et des formules claires.",
-  business: JARVIS_BASE + " Tu es expert en business et finance. Utilise des chiffres précis et des tableaux si utile.",
-  robot:    JARVIS_BASE + " Tu es expert en robotique et électronique. Guide étape par étape avec du code si nécessaire.",
-  image:    JARVIS_BASE + " Tu es expert en analyse visuelle. Décris et analyse en détail ce que tu vois.",
+  auto:     JARVIS_BASE + " Adapte ton niveau d'expertise au sujet abordé et donne le meilleur de chaque domaine.",
+  code:     JARVIS_BASE + " Tu es un ingénieur logiciel senior. Fournis du code complet, fonctionnel et commenté dans des blocs ```langage, explique les choix clés en bref, et signale les pièges éventuels.",
+  web:      JARVIS_BASE + " Tu es analyste de l'actualité. Sois factuel et à jour ; quand tu utilises des sources web, appuie-toi dessus et reste précis sur les dates et les chiffres.",
+  write:    JARVIS_BASE + " Tu es un rédacteur professionnel. Adapte le ton au contexte (email, rapport, article, post), soigne la structure et propose un rendu prêt à l'emploi.",
+  science:  JARVIS_BASE + " Tu es chercheur scientifique. Raisonne étape par étape, montre les calculs et les formules clairement, et vérifie la cohérence du résultat.",
+  business: JARVIS_BASE + " Tu es consultant en stratégie et finance. Utilise des chiffres précis, des tableaux quand c'est pertinent, et termine par une recommandation claire.",
+  robot:    JARVIS_BASE + " Tu es ingénieur en robotique et électronique. Guide étape par étape, fournis le câblage et le code nécessaires, et préviens des risques matériels.",
+  image:    JARVIS_BASE + " Tu es expert en analyse visuelle. Décris précisément ce que tu vois et réponds en détail à la demande liée à l'image.",
 };
+
+// ── PROMPTEUR AUTOMATIQUE ──
+// Analyse la demande et ajoute des directives ciblées pour que JARVIS
+// produise exactement le bon format de réponse, sans que l'utilisateur
+// ait à le préciser.
+function optimizePrompt(text) {
+  const t = (text||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  const d = [];
+  if (/\b(comment|etape|etapes|tuto|guide|installe|configure|mettre en place)\b/.test(t))
+    d.push("Réponds sous forme d'étapes numérotées claires et concrètes.");
+  if (/\b(compare|comparer|vs|versus|difference|mieux|plutot que|ou bien)\b/.test(t))
+    d.push("Fais une comparaison structurée (tableau si pertinent) puis tranche avec une recommandation justifiée.");
+  if (/\b(pourquoi|explique|explique-moi|c'?est quoi|qu'?est|comprendre)\b/.test(t))
+    d.push("Explique simplement, avec une analogie ou un exemple concret.");
+  if (/\b(liste|idees|exemples|propose|suggere|donne-moi des)\b/.test(t))
+    d.push("Donne une liste organisée et variée, sans superflu.");
+  if (/\b(corrige|ameliore|relis|optimise|revois|reformule)\b/.test(t))
+    d.push("Montre la version améliorée, puis résume brièvement ce que tu as changé.");
+  if (/\b(plan|strategie|business plan|projet|lancer|roadmap)\b/.test(t))
+    d.push("Structure un plan d'action priorisé avec des étapes réalistes.");
+  return d.length ? "\n\nFORMAT ATTENDU : " + d.join(' ') : "";
+}
 
 const PB_QUESTIONS = [
   { id:'goal',   q:"Objectif du projet ?",       hint:"Une phrase claire.", type:'text',    ph:'Ex: Lancer une boutique en ligne...' },
@@ -1582,7 +1604,8 @@ async function send() {
   let projPrompt='';
   if (currentProject!=='general') { const p=getProjects().find(x=>x.id===currentProject); if(p?.prompt) projPrompt='\n\nCONTEXTE PROJET :\n'+p.prompt; }
   const modeKey=mode==='auto'?(routeReason==='general'?'auto':routeReason):mode;
-  const sys=(PROMPTS[modeKey]||PROMPTS.auto)+projPrompt+memCtx;
+  const autoPrompt=optimizePrompt(userContent||displayText);
+  const sys=(PROMPTS[modeKey]||PROMPTS.auto)+autoPrompt+projPrompt+memCtx;
 
   const tryCall=async ai=>{
     if (ai.type==='gemini') return callGemini(getKey(ai),sys,history.slice(0,-1),savedImg,userContent||displayText);
@@ -1633,10 +1656,17 @@ async function callGemini(key,sys,prevHist,image,currentText) {
   const parts=[]; if(image)parts.push({inlineData:{mimeType:image.mimeType,data:image.base64}});
   parts.push({text:currentText||'Analyse.'}); contents.push({role:'user',parts});
   const model=AIS.find(a=>a.id==='gemini')?.model||'gemini-2.5-flash';
-  const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({system_instruction:{parts:[{text:sys}]},contents,generationConfig:{temperature:0.7,maxOutputTokens:2048}})});
+  const body={system_instruction:{parts:[{text:sys}]},contents,generationConfig:{temperature:0.7,maxOutputTokens:2048}};
+  // Recherche web en direct : on n'active le grounding Google Search que
+  // sans image (l'outil n'est pas combinable avec une entrée image).
+  if (!image) body.tools=[{google_search:{}}];
+  const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if (!res.ok) { const e=await res.json().catch(()=>({})); throw new Error(e.error?.message||`HTTP ${res.status}`); }
   const d=await res.json();
-  const txt=d.candidates?.[0]?.content?.parts?.[0]?.text; if (!txt) throw new Error('Réponse vide');
+  const cand=d.candidates?.[0];
+  // Concatène toutes les parties texte (le grounding peut en renvoyer plusieurs)
+  const txt=(cand?.content?.parts||[]).map(p=>p.text||'').join('').trim();
+  if (!txt) throw new Error('Réponse vide');
   return txt;
 }
 
