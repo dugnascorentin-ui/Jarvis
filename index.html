@@ -1073,8 +1073,49 @@ function initApp() {
 // UPDATE CENTER
 // ═══════════════════════════════════════
 function buildUpdateCenter() {
-  const html = buildUpdHTML();
+  const header = `<button class="btn-p muted" style="margin-bottom:12px" onclick="checkAIUpdates()">🔄 Vérifier les versions de mes IA</button><div id="aiVerReport"></div>`;
+  const html = header + buildUpdHTML();
   ['updateBody','mp-updates-body'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = html; });
+}
+
+// Liste les modèles disponibles chez le fournisseur d'une IA
+async function listModels(ai) {
+  if (ai.type === 'gemini') {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(getKey(ai))}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    return (d.models||[]).map(m => (m.name||'').replace(/^models\//,''));
+  }
+  const url = (ai.url||'').replace(/\/chat\/completions.*$/,'/models');
+  if (!url || url === ai.url) throw new Error('endpoint inconnu');
+  const r = await fetch(url, { headers:{ 'Authorization':`Bearer ${getKey(ai)}` } });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const d = await r.json();
+  return (d.data||d.models||[]).map(m => m.id || m.name).filter(Boolean);
+}
+
+// Vérifie, pour chaque IA configurée, si son modèle est toujours valide
+async function checkAIUpdates() {
+  const ais = getAllAIs().filter(a => !!getKey(a));
+  const box = document.getElementById('aiVerReport');
+  if (!ais.length) { if (box) box.innerHTML = `<div class="upd-impact">Configure au moins une clé API.</div>`; return; }
+  if (box) box.innerHTML = `<div class="upd-impact">⏳ Vérification des versions en cours...</div>`;
+  const rows = [];
+  for (const ai of ais) {
+    try {
+      const models = await listModels(ai);
+      const ok = models.some(m => m === ai.model || m.endsWith('/'+ai.model) || ai.model.endsWith(m));
+      if (ok) {
+        rows.push(`<div class="sec-row"><span class="sec-icon">${ai.icon||'🤖'}</span><div class="sec-text"><div class="sec-title">${escHtml(ai.name)}</div><div class="sec-desc">${escHtml(ai.model)}</div></div><span class="sec-badge ok">✓ À JOUR</span></div>`);
+      } else {
+        const alt = models.filter(m => m.split(/[-\/]/)[0] === (ai.model.split(/[-\/]/)[0]||'')).slice(0,3);
+        rows.push(`<div class="sec-row" style="flex-wrap:wrap"><span class="sec-icon">${ai.icon||'🤖'}</span><div class="sec-text"><div class="sec-title">${escHtml(ai.name)}</div><div class="sec-desc">⚠ ${escHtml(ai.model)} introuvable — peut-être déprécié</div></div>${alt.length?`<div style="flex-basis:100%;font-size:11px;color:var(--text2);margin-top:4px">Dispo : ${alt.map(escHtml).join(', ')}</div>`:''}</div>`);
+      }
+    } catch (e) {
+      rows.push(`<div class="sec-row"><span class="sec-icon">${ai.icon||'🤖'}</span><div class="sec-text"><div class="sec-title">${escHtml(ai.name)}</div><div class="sec-desc">Vérification impossible (${escHtml(e.message)})</div></div></div>`);
+    }
+    if (box) box.innerHTML = `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">${rows.join('')}</div>`;
+  }
 }
 
 function buildUpdHTML() {
