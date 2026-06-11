@@ -555,7 +555,7 @@ button:active:not(:disabled){transform:scale(.96)}
             <button class="ia-btn" onclick="document.getElementById('imgInp').click()">🖼️</button>
             <input type="file" id="imgInp" accept="image/*" style="display:none" onchange="handleImg(this)">
             <button class="ia-btn" onclick="document.getElementById('fileInp').click()">📄</button>
-            <input type="file" id="fileInp" accept=".txt,.md,.csv,.json,.js,.py,.html,.css" style="display:none" onchange="handleFile(this)">
+            <input type="file" id="fileInp" accept=".txt,.md,.csv,.json,.js,.py,.html,.css,.docx,.rtf,.xml,.yml,.yaml,.log,.ts,.java,.c,.cpp" style="display:none" onchange="handleFile(this)">
             <button class="ia-btn send" id="sendBtn" onclick="send()">➤</button>
           </div>
         </div>
@@ -1568,12 +1568,73 @@ function handleImg(input) {
   r.readAsDataURL(f); input.value='';
 }
 
-function handleFile(input) {
-  const f=input.files[0]; if (!f) return;
-  if (f.size>2*1024*1024) { alert('Max 2 MB'); return; }
-  const r=new FileReader();
-  r.onload=e=>{pendingFile={text:e.target.result,name:f.name};showFP(f.name,fmtSz(f.size),null,'file');};
-  r.readAsText(f); input.value='';
+// Décompression DEFLATE via l'API navigateur (pour lire les .docx)
+async function _inflateRaw(bytes) {
+  if (typeof DecompressionStream === 'undefined') throw new Error('navigateur trop ancien');
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+// Lit une entrée d'une archive ZIP (utilisé pour les .docx)
+async function _unzipEntry(buf, target) {
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= 0; i--) { if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; } }
+  if (eocd < 0) throw new Error('archive illisible');
+  const count = dv.getUint16(eocd + 10, true);
+  let off = dv.getUint32(eocd + 16, true);
+  const dec = new TextDecoder();
+  for (let k = 0; k < count; k++) {
+    if (dv.getUint32(off, true) !== 0x02014b50) break;
+    const method = dv.getUint16(off + 10, true);
+    const compSize = dv.getUint32(off + 20, true);
+    const nameLen = dv.getUint16(off + 28, true);
+    const extraLen = dv.getUint16(off + 30, true);
+    const commLen = dv.getUint16(off + 32, true);
+    const lho = dv.getUint32(off + 42, true);
+    const name = dec.decode(buf.subarray(off + 46, off + 46 + nameLen));
+    off += 46 + nameLen + extraLen + commLen;
+    if (name !== target) continue;
+    const lNameLen = dv.getUint16(lho + 26, true);
+    const lExtraLen = dv.getUint16(lho + 28, true);
+    const start = lho + 30 + lNameLen + lExtraLen;
+    const data = buf.subarray(start, start + compSize);
+    if (method === 0) return data;
+    if (method === 8) return await _inflateRaw(data);
+    throw new Error('compression non gérée');
+  }
+  return null;
+}
+// Extrait le texte d'un .docx
+async function readDocx(file) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const xmlBytes = await _unzipEntry(buf, 'word/document.xml');
+  if (!xmlBytes) throw new Error('document Word invalide');
+  let s = new TextDecoder().decode(xmlBytes);
+  s = s.replace(/<\/w:p>/g, '\n').replace(/<w:tab[^>]*>/g, '\t').replace(/<[^>]+>/g, '');
+  s = s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  return s.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+async function handleFile(input) {
+  const f = input.files[0]; if (!f) return; input.value = '';
+  if (f.size > 10 * 1024 * 1024) { alert('Fichier trop lourd (max 10 Mo)'); return; }
+  const name = f.name, ext = (name.split('.').pop() || '').toLowerCase();
+  try {
+    let text;
+    if (ext === 'docx') {
+      text = await readDocx(f);
+    } else if (ext === 'pdf' || ext === 'doc') {
+      toast(`⚠ Format .${ext} non lisible directement — exporte-le en .docx ou copie le texte`); return;
+    } else {
+      text = await f.text(); // txt, md, csv, json, code, rtf, html, xml...
+      if (ext === 'rtf' || /^\s*</.test(text)) text = text.replace(/<[^>]+>/g, ' ').replace(/\\[a-z]+\d*/gi, ' ');
+    }
+    if (!text || !text.trim()) { toast('⚠ Ce fichier semble vide ou illisible'); return; }
+    pendingFile = { text: text.slice(0, 30000), name };
+    showFP(name, fmtSz(f.size), null, 'file');
+  } catch (e) {
+    toast('⚠ Lecture impossible : ' + e.message);
+  }
 }
 
 const fmtSz = b => b<1024?b+' B':b<1024*1024?(b/1024).toFixed(1)+' KB':(b/(1024*1024)).toFixed(1)+' MB';
