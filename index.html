@@ -1562,7 +1562,6 @@ function speak(text) {
 // ═══════════════════════════════════════
 function handleImg(input) {
   const f=input.files[0]; if (!f) return;
-  if (f.size>10*1024*1024) { alert('Max 10 MB'); return; }
   const r=new FileReader();
   r.onload=e=>{pendingImg={base64:e.target.result.split(',')[1],mimeType:f.type,name:f.name};showFP(f.name,fmtSz(f.size),e.target.result,'img');};
   r.readAsDataURL(f); input.value='';
@@ -1617,7 +1616,6 @@ async function readDocx(file) {
 
 async function handleFile(input) {
   const f = input.files[0]; if (!f) return; input.value = '';
-  if (f.size > 10 * 1024 * 1024) { alert('Fichier trop lourd (max 10 Mo)'); return; }
   const name = f.name, ext = (name.split('.').pop() || '').toLowerCase();
   try {
     let text;
@@ -1630,7 +1628,7 @@ async function handleFile(input) {
       if (ext === 'rtf' || /^\s*</.test(text)) text = text.replace(/<[^>]+>/g, ' ').replace(/\\[a-z]+\d*/gi, ' ');
     }
     if (!text || !text.trim()) { toast('⚠ Ce fichier semble vide ou illisible'); return; }
-    pendingFile = { text: text.slice(0, 30000), name };
+    pendingFile = { text, name };
     showFP(name, fmtSz(f.size), null, 'file');
   } catch (e) {
     toast('⚠ Lecture impossible : ' + e.message);
@@ -2006,7 +2004,7 @@ async function callGemini(key,sys,prevHist,image,currentText,webSearch=true) {
   const parts=[]; if(image)parts.push({inlineData:{mimeType:image.mimeType,data:image.base64}});
   parts.push({text:currentText||'Analyse.'}); contents.push({role:'user',parts});
   const model=AIS.find(a=>a.id==='gemini')?.model||'gemini-2.5-flash';
-  const body={system_instruction:{parts:[{text:sys}]},contents,generationConfig:{temperature:0.7,maxOutputTokens:2048}};
+  const body={system_instruction:{parts:[{text:sys}]},contents,generationConfig:{temperature:0.7,maxOutputTokens:8192}};
   // Recherche web en direct : grounding Google Search (sauf image, ni quand
   // on veut juste reformuler un prompt — sinon Gemini répond au lieu de reformuler).
   if (!image && webSearch) body.tools=[{google_search:{}}];
@@ -2022,7 +2020,7 @@ async function callGemini(key,sys,prevHist,image,currentText,webSearch=true) {
 
 async function callOpenAI(key,url,model,sys) {
   const messages=[{role:'system',content:sys},...history.map(m=>({role:m.role,content:m.content}))];
-  const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},body:JSON.stringify({model,messages,max_tokens:2048,temperature:0.7})});
+  const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},body:JSON.stringify({model,messages,max_tokens:8192,temperature:0.7})});
   if (!res.ok) { const e=await res.json().catch(()=>({})); throw new Error(e.error?.message||e.message||`HTTP ${res.status}`); }
   const d=await res.json();
   const txt=d.choices?.[0]?.message?.content; if (!txt) throw new Error('Réponse vide');
