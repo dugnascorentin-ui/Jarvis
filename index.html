@@ -8,12 +8,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#07090f">
 <meta name="robots" content="noindex,nofollow,noarchive">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#07090f;--bg1:#0d1019;--bg2:#111520;--bg3:#161b2a;--line:#1e2535;--line2:#2a3348;--blue:#3b82f6;--blue2:#60a5fa;--blue3:#1d4ed8;--gold:#f59e0b;--gold2:#fbbf24;--green:#10b981;--red:#ef4444;--purple:#8b5cf6;--orange:#f97316;--text:#e8edf5;--text2:#9fb0c5;--text3:#647892;--r:12px;--r2:8px;--nav-h:58px}
+:root{--bg:#08080c;--bg1:#0e0e14;--bg2:#13131b;--bg3:#191923;--line:#1e1e2a;--line2:#2b2b3a;--blue:#4f7cff;--blue2:#7c9aff;--blue3:#3556d9;--gold:#f59e0b;--gold2:#fbbf24;--green:#22c58b;--red:#f0556a;--purple:#8b5cf6;--orange:#f97316;--text:#f2f4f8;--text2:#a3abbe;--text3:#6b7387;--r:14px;--r2:11px;--nav-h:60px}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden}
-body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+body{background:var(--bg);color:var(--text);font-family:'Inter','Space Grotesk',sans-serif;font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 button{font-family:inherit;cursor:pointer;border:none;outline:none}
 input,textarea,select{font-family:inherit;outline:none;border:none}
 a{color:var(--blue2);text-decoration:none}
@@ -124,11 +124,11 @@ a{color:var(--blue2);text-decoration:none}
 .msg-bubble{padding:10px 14px;border-radius:13px;font-size:13px;line-height:1.75;word-break:break-word}
 .msg.user .msg-bubble{background:linear-gradient(135deg,rgba(59,130,246,.16),rgba(29,78,216,.1));border:1px solid rgba(59,130,246,.22);border-top-right-radius:3px}
 .msg.assistant .msg-bubble{background:var(--bg2);border:1px solid var(--line);border-top-left-radius:3px}
-.msg-bubble h1,.msg-bubble h2,.msg-bubble h3{font-family:'Syne',sans-serif;margin:10px 0 5px;color:var(--blue2)}
+.msg-bubble h1,.msg-bubble h2,.msg-bubble h3{font-family:'Inter',sans-serif;font-weight:700;margin:10px 0 5px;color:var(--text)}
 .msg-bubble h1{font-size:15px}.msg-bubble h2{font-size:14px}.msg-bubble h3{font-size:13px;color:var(--text)}
 .msg-bubble p{margin:0 0 7px}.msg-bubble p:last-child{margin-bottom:0}
 .msg-bubble ul,.msg-bubble ol{margin:5px 0 7px 16px}.msg-bubble li{margin-bottom:3px}
-.msg-bubble strong{color:var(--gold2);font-weight:700}
+.msg-bubble strong{color:var(--blue2);font-weight:700}
 .msg-bubble em{color:var(--text2);font-style:italic}
 .msg-bubble code{background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.2);border-radius:4px;padding:1px 5px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--blue2)}
 .msg-bubble pre{background:rgba(0,0,0,.4);border:1px solid var(--line2);border-radius:var(--r2);padding:10px;margin:7px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.6;color:#a5f3fc}
@@ -291,9 +291,78 @@ a{color:var(--blue2);text-decoration:none}
 .step-note{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text3);background:var(--bg2);border:1px solid var(--line);border-radius:var(--r2);padding:6px 10px;line-height:1.6}
 .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:900;padding:10px 18px;border-radius:20px;background:#065f46;border:1px solid #10b981;color:#6ee7b7;font-family:'JetBrains Mono',monospace;font-size:11px;box-shadow:0 8px 24px rgba(16,185,129,.3);animation:sup .3s ease;white-space:nowrap;pointer-events:none}
 #pwaBtn{position:fixed;bottom:calc(var(--nav-h) + 10px);right:16px;z-index:400;display:none;align-items:center;gap:7px;padding:9px 16px;border-radius:50px;background:linear-gradient(135deg,var(--blue3),var(--blue));color:#fff;font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;box-shadow:0 8px 24px rgba(59,130,246,.4);border:none;cursor:pointer}
-@media(max-width:680px){.sidebar{display:none}.mobile-nav{display:flex}.msg-content{max-width:88%}.topbar{padding:0 14px;height:54px}.tb-right{display:none}.tb-sec{display:none}.route-bar{display:none}.proj-bar{padding:9px 16px}.chat-wrap{padding-bottom:var(--nav-h)}}
+@media(max-width:680px){.sidebar{display:none}.mobile-nav{display:flex}.msg-content{max-width:88%}.topbar{padding:0 16px;height:56px}.tb-right{display:none}.tb-sec{display:none}.route-bar{display:none}.proj-bar{padding:10px 16px}.chat-wrap{padding-bottom:var(--nav-h)}.chips{display:grid;grid-template-columns:repeat(2,1fr);width:100%;max-width:380px}.chip{text-align:center}.welcome h2{font-size:38px}}
 
-/* ═══════ REFONTE APPLE — itération 2 ═══════ */
+/* ═══════ DESIGN SYSTEM PREMIUM — v3 ═══════
+   Direction : produit haut de gamme (type Linear / Raycast).
+   Un accent unique, typo Inter généreuse, surfaces calmes,
+   verre dépoli, ombres douces, micro-interactions soignées. */
+
+/* — Typographie : Inter partout dans l'interface, mono réservé au code — */
+.flbl,.sb-lbl,.lock-lbl{font-family:'Inter',sans-serif;font-size:11px;font-weight:600;letter-spacing:.6px;color:var(--text3);text-transform:uppercase}
+.proj-sub,.ai-isub,.sec-desc,.sug-desc,.file-prev-size,.upd-tag,.cat-desc{font-family:'Inter',sans-serif}
+.proj-sub{font-size:11px}.ai-isub{font-size:10px}
+.msg-actions,.st-ok,.st-err,.st-neu,.modal-foot,.key-link,.step-note,.lock-hint,.lock-msg,.lock-sub,.tb-ver,.tb-badge,.mem-stat,.sec-badge{font-family:'Inter',sans-serif;letter-spacing:0}
+.st-ok,.st-err,.st-neu{font-size:12px}
+.modal-foot{font-size:11px}
+.msg-actions{font-size:11px}
+.tb-badge{font-size:11px;font-weight:500}
+.lock-sub{font-size:10px;letter-spacing:2px}
+.lock-hint{font-size:11px}
+
+/* — Surfaces & composants unifiés — */
+.modal-h h3{font-family:'Inter',sans-serif;font-size:15px;font-weight:700;letter-spacing:0;color:var(--text)}
+.mx{width:30px;height:30px;border-radius:50%;font-size:14px}
+.modal-body{padding:20px;gap:18px}
+.finp,.fsel,.key-row input{font-family:'Inter',sans-serif;font-size:14px;padding:12px 14px;border-radius:12px}
+.fta{font-family:'Inter',sans-serif;font-size:14px;padding:12px 14px;border-radius:12px}
+.btn-p{font-family:'Inter',sans-serif;font-size:14px;font-weight:600;letter-spacing:0;padding:13px;border-radius:13px;background:linear-gradient(135deg,#4f7cff,#7c5cff)}
+.btn-p.purple{background:linear-gradient(135deg,#7c5cff,#a855f7)}
+.btn-p:hover{transform:translateY(-1px);box-shadow:0 10px 26px rgba(79,124,255,.30)}
+.btn-sec,.btn-danger{font-size:13px;padding:10px 14px;border-radius:11px}
+.key-hdr label{font-size:14px}
+.key-link{font-size:11px;padding:4px 10px;border-radius:8px}
+.pb-opt{font-family:'Inter',sans-serif;font-size:13px;padding:9px 16px;border-radius:22px}
+.pb-question{font-size:16px}
+.pb-hint{font-size:12px}
+.upd-name{font-size:14px}.upd-desc{font-size:12.5px}
+.sec-title{font-size:13px}.sec-desc{font-size:11px}
+.mem-item{font-size:13px;padding:10px 12px;border-radius:11px}
+.cat-name{font-size:13px}.cat-desc{font-size:11.5px}
+.step-t{font-size:13px}
+.gsec-title{font-size:14px}
+
+/* — Barre latérale (PC) : plus aérée, items généreux — */
+.sidebar{width:236px;background:rgba(13,13,19,.6);backdrop-filter:blur(20px)}
+.sb-top{padding:14px 12px}
+.sb-scroll{padding:12px}
+.proj-item{padding:10px 11px;border-radius:12px;margin-bottom:4px}
+.proj-name{font-size:13px}
+.mode-item{font-size:13px;padding:9px 11px;border-radius:11px;color:var(--text2)}
+.mode-item.active{background:rgba(79,124,255,.12);color:var(--blue2)}
+.ai-item{padding:9px 10px;border-radius:11px}
+.ai-iname{font-size:12.5px}
+.mem-stat{font-size:11.5px;padding:8px 10px;border-radius:11px}
+
+/* — En-tête : épuré — */
+.tb-btn{font-size:12px;padding:7px 12px;border-radius:10px}
+.tb-btn.gold,.tb-btn.purple{border-color:var(--line2);color:var(--text2)}
+.tb-btn.gold:hover,.tb-btn.purple:hover{border-color:var(--blue);color:var(--blue2)}
+
+/* — Toast : verre sombre élégant — */
+.toast{background:rgba(20,20,28,.92);border:1px solid rgba(255,255,255,.12);color:var(--text);font-family:'Inter',sans-serif;font-size:13px;padding:12px 22px;border-radius:14px;backdrop-filter:blur(16px);box-shadow:0 16px 40px rgba(0,0,0,.5)}
+
+/* — Écran de verrouillage : carte de verre — */
+.lock-card{background:rgba(14,14,20,.8);backdrop-filter:blur(28px);border:1px solid rgba(255,255,255,.08);box-shadow:0 50px 100px rgba(0,0,0,.7)}
+.lock-inp{border-radius:13px;font-family:'Inter',sans-serif}
+.lock-btn{font-family:'Inter',sans-serif;font-size:14px;font-weight:700;letter-spacing:.5px;border-radius:13px;background:linear-gradient(135deg,#4f7cff,#7c5cff)}
+
+/* — Panneaux mobiles — */
+.mp-title{font-family:'Inter',sans-serif;font-size:18px;font-weight:700;color:var(--text)}
+.mp-header{border-bottom:1px solid rgba(255,255,255,.05);background:transparent}
+.mobile-panel{background:var(--bg)}
+.mp-scroll{padding:14px 16px}
+
 @keyframes gsweep{0%{background-position:0% 50%}100%{background-position:200% 50%}}
 @keyframes modalIn{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
@@ -329,7 +398,7 @@ button:active:not(:disabled){transform:scale(.96)}
 /* ── BULLES façon iMessage ── */
 .msg{animation:fadeUp .32s cubic-bezier(.2,.8,.2,1)}
 .msg-bubble{font-size:15px;line-height:1.65;padding:12px 16px;border-radius:20px}
-.msg.user .msg-bubble{background:linear-gradient(135deg,#3b82f6,#2563eb);border:none;color:#fff;border-top-right-radius:6px;box-shadow:0 6px 18px rgba(37,99,235,.30)}
+.msg.user .msg-bubble{background:linear-gradient(135deg,#4f7cff,#6e5bff);border:none;color:#fff;border-top-right-radius:6px;box-shadow:0 6px 20px rgba(79,124,255,.32)}
 .msg.user .msg-bubble strong{color:#fff}
 .msg.assistant .msg-bubble{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.07);backdrop-filter:blur(10px);border-top-left-radius:6px}
 .msg-av{width:32px;height:32px;border-radius:50%}
