@@ -1743,6 +1743,61 @@ function mdToRtf(md) {
   return `{\\rtf1\\ansi\\ansicpg1252\\deff0{\\fonttbl{\\f0 Calibri;}{\\f1 Consolas;}}\\fs22 ${body}}`;
 }
 
+// ── GÉNÉRATEUR DE VRAI .docx (ZIP + WordprocessingML, sans librairie) ──
+const _crcTable = (() => { let t=[]; for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1; t[n]=c>>>0; } return t; })();
+function _crc32(b){ let c=0xFFFFFFFF; for(let i=0;i<b.length;i++) c=_crcTable[(c^b[i])&0xFF]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function _zip(files) { // archive ZIP non compressée (méthode "store")
+  const enc=new TextEncoder(); const u16=n=>[n&0xff,(n>>>8)&0xff]; const u32=n=>[n&0xff,(n>>>8)&0xff,(n>>>16)&0xff,(n>>>24)&0xff];
+  const parts=[]; const central=[]; let offset=0;
+  for (const f of files) {
+    const name=enc.encode(f.name), data=f.bytes, crc=_crc32(data);
+    const lh=[0x50,0x4b,0x03,0x04,...u16(20),...u16(0),...u16(0),...u16(0),...u16(0),...u32(crc),...u32(data.length),...u32(data.length),...u16(name.length),...u16(0)];
+    parts.push(new Uint8Array(lh),name,data);
+    central.push(new Uint8Array([0x50,0x4b,0x01,0x02,...u16(20),...u16(20),...u16(0),...u16(0),...u16(0),...u16(0),...u32(crc),...u32(data.length),...u32(data.length),...u16(name.length),...u16(0),...u16(0),...u16(0),...u16(0),...u32(0),...u32(offset)]), name);
+    offset += lh.length + name.length + data.length;
+  }
+  let csize=0; for (const c of central) csize+=c.length;
+  const end=new Uint8Array([0x50,0x4b,0x05,0x06,...u16(0),...u16(0),...u16(files.length),...u16(files.length),...u32(csize),...u32(offset),...u16(0)]);
+  return new Blob([...parts,...central,end], { type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+}
+const _xmlEsc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function _docxRuns(text) { // gère **gras**, *italique*, `code`
+  let out='', rest=text; const re=/(\*\*([^*]+)\*\*|`([^`]+)`|\*([^*]+)\*)/;
+  let m; while ((m=rest.match(re))) {
+    const before=rest.slice(0,m.index);
+    if (before) out+=`<w:r><w:t xml:space="preserve">${_xmlEsc(before)}</w:t></w:r>`;
+    if (m[2]!=null) out+=`<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${_xmlEsc(m[2])}</w:t></w:r>`;
+    else if (m[3]!=null) out+=`<w:r><w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/></w:rPr><w:t xml:space="preserve">${_xmlEsc(m[3])}</w:t></w:r>`;
+    else if (m[4]!=null) out+=`<w:r><w:rPr><w:i/></w:rPr><w:t xml:space="preserve">${_xmlEsc(m[4])}</w:t></w:r>`;
+    rest=rest.slice(m.index+m[0].length);
+  }
+  if (rest) out+=`<w:r><w:t xml:space="preserve">${_xmlEsc(rest)}</w:t></w:r>`;
+  return out || '<w:r><w:t/></w:r>';
+}
+function _docxBody(md) {
+  let body='';
+  for (const raw of String(md).replace(/\r/g,'').split('\n')) {
+    const line=raw.trim(); let m;
+    if (!line) { body+='<w:p/>'; continue; }
+    if (m=line.match(/^(#{1,6})\s+(.*)$/)) { const sz=36-(m[1].length-1)*4; body+=`<w:p><w:pPr><w:spacing w:before="160" w:after="60"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="${sz}"/></w:rPr><w:t xml:space="preserve">${_xmlEsc(m[2])}</w:t></w:r></w:p>`; continue; }
+    if (/^([-*])\s+/.test(line)) { body+=`<w:p><w:pPr><w:ind w:left="360"/></w:pPr><w:r><w:t xml:space="preserve">• </w:t></w:r>${_docxRuns(line.replace(/^([-*])\s+/,''))}</w:p>`; continue; }
+    if (/^\|/.test(line)) { if (/^\|[\s:|-]+\|?$/.test(line)) continue; body+=`<w:p>${_docxRuns(line.replace(/\|/g,'   ').trim())}</w:p>`; continue; }
+    body+=`<w:p>${_docxRuns(line)}</w:p>`;
+  }
+  return body;
+}
+function buildDocx(text) {
+  const enc=new TextEncoder();
+  const ct=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`;
+  const rels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`;
+  const doc=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${_docxBody(text)}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134"/></w:sectPr></w:body></w:document>`;
+  return _zip([
+    { name:'[Content_Types].xml', bytes:enc.encode(ct) },
+    { name:'_rels/.rels', bytes:enc.encode(rels) },
+    { name:'word/document.xml', bytes:enc.encode(doc) },
+  ]);
+}
+
 // Génère et télécharge le contenu d'une réponse dans le format voulu
 function downloadDoc(text, format) {
   const html = md(text); // markdown → HTML mis en forme
@@ -1756,8 +1811,8 @@ function downloadDoc(text, format) {
   } else if (format === 'txt') {
     _dlBlob(new Blob([text], { type:'text/plain;charset=utf-8' }), _dlName('txt')); toast('✅ Fichier téléchargé');
   } else {
-    // Word/document → RTF : ouvrable sur iPhone ET dans Word/Pages/Google Docs
-    _dlBlob(new Blob([mdToRtf(text)], { type:'application/rtf' }), _dlName('rtf')); toast('✅ Document téléchargé');
+    // Word → vrai .docx (s'ouvre nativement sur iPhone, Word, Pages, Google Docs)
+    _dlBlob(buildDocx(text), _dlName('docx')); toast('✅ Word téléchargé');
   }
 }
 
