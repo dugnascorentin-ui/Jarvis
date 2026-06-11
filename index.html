@@ -1720,6 +1720,29 @@ function detectDocRequest(text) {
   return { wanted:false };
 }
 
+// Convertit le markdown d'une réponse en RTF (format Word universel,
+// qui s'ouvre aussi bien sur iPhone que sur PC, Word, Pages, Google Docs).
+function mdToRtf(md) {
+  const escRtf = s => s.replace(/[\\{}]/g, m => '\\' + m).replace(/[\u0080-\uFFFF]/g, c => '\\u' + c.charCodeAt(0) + '?');
+  const inline = s => {
+    s = escRtf(s);
+    s = s.replace(/\*\*([^*]+)\*\*/g, '{\\b $1}');
+    s = s.replace(/\*([^*]+)\*/g, '{\\i $1}');
+    s = s.replace(/`([^`]+)`/g, '{\\f1 $1}');
+    return s;
+  };
+  let body = '';
+  for (const raw of String(md).replace(/\r/g,'').split('\n')) {
+    const line = raw.trim(); let m;
+    if (!line) { body += '\\par '; continue; }
+    if (m = line.match(/^(#{1,6})\s+(.*)$/)) { const sz = 40 - (m[1].length-1)*4; body += `\\par{\\b\\fs${sz} ${inline(m[2])}}\\par `; continue; }
+    if (/^([-*])\s+/.test(line)) { body += `\\par {\\bullet}\\tab ${inline(line.replace(/^([-*])\s+/,''))}`; continue; }
+    if (/^\|/.test(line)) { if (/^\|[\s:|-]+\|?$/.test(line)) continue; body += `\\par ${inline(line.replace(/\|/g,'   ').trim())}`; continue; }
+    body += `\\par ${inline(line)}`;
+  }
+  return `{\\rtf1\\ansi\\ansicpg1252\\deff0{\\fonttbl{\\f0 Calibri;}{\\f1 Consolas;}}\\fs22 ${body}}`;
+}
+
 // Génère et télécharge le contenu d'une réponse dans le format voulu
 function downloadDoc(text, format) {
   const html = md(text); // markdown → HTML mis en forme
@@ -1733,7 +1756,8 @@ function downloadDoc(text, format) {
   } else if (format === 'txt') {
     _dlBlob(new Blob([text], { type:'text/plain;charset=utf-8' }), _dlName('txt')); toast('✅ Fichier téléchargé');
   } else {
-    _dlBlob(new Blob(['﻿'+_wordShell(html)], { type:'application/msword' }), _dlName('doc')); toast('✅ Word téléchargé');
+    // Word/document → RTF : ouvrable sur iPhone ET dans Word/Pages/Google Docs
+    _dlBlob(new Blob([mdToRtf(text)], { type:'application/rtf' }), _dlName('rtf')); toast('✅ Document téléchargé');
   }
 }
 
@@ -1811,7 +1835,9 @@ async function send() {
   if (currentProject!=='general') { const p=getProjects().find(x=>x.id===currentProject); if(p?.prompt) projPrompt='\n\nCONTEXTE PROJET :\n'+p.prompt; }
   const modeKey=mode==='auto'?(routeReason==='general'?'auto':routeReason):mode;
   const autoPrompt=optimizePrompt(userContent||displayText);
-  const sys=(PROMPTS[modeKey]||PROMPTS.auto)+autoPrompt+projPrompt+memCtx;
+  const docReq=detectDocRequest(userContent||displayText);
+  const docDirective = docReq.wanted ? "\n\n⚠ DOCUMENT DEMANDÉ : l'application JARVIS se charge ELLE-MÊME de créer le fichier téléchargeable. Tu dois donc produire UNIQUEMENT le CONTENU du document, complet, structuré et prêt à l'emploi (titre, sections, paragraphes, tableaux si pertinent). Ne dis JAMAIS que tu ne peux pas créer un fichier Word/PDF. N'ajoute AUCUNE phrase d'introduction ('Voici...', 'En tant que JARVIS...') ni de conclusion : commence directement par le contenu du document." : "";
+  const sys=(PROMPTS[modeKey]||PROMPTS.auto)+autoPrompt+docDirective+projPrompt+memCtx;
 
   const tryCall=async ai=>{
     if (ai.type==='gemini') return callGemini(getKey(ai),sys,history.slice(0,-1),savedImg,userContent||displayText);
@@ -1847,7 +1873,6 @@ async function send() {
   removeTyping();
   appendMsgDOM('assistant',reply,usedAI);
   // Si l'utilisateur a demandé un fichier, on ajoute une carte téléchargeable dans le chat
-  const docReq = detectDocRequest(userContent||displayText);
   if (docReq.wanted) appendFileCard(reply, docReq);
   history.push({role:'assistant',content:reply,aiId:usedAI.id});
   if (currentProject==='general') await SEC.set('ph_general',history);
