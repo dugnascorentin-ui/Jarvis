@@ -410,6 +410,7 @@ button:active:not(:disabled){transform:scale(.96)}
 .input-wrap:focus-within{border-color:rgba(96,165,250,.55);box-shadow:0 10px 34px rgba(0,0,0,.45),0 0 0 3px rgba(59,130,246,.12)}
 .chat-ta{font-size:15px}
 .ia-btn{width:36px;height:36px;border-radius:50%;font-size:15px}
+.ia-btn.active-mode{background:linear-gradient(135deg,#7c5cff,#a855f7);border-color:transparent;color:#fff;box-shadow:0 4px 14px rgba(124,92,255,.45)}
 .ia-btn.send{box-shadow:0 4px 16px rgba(59,130,246,.4)}
 .ia-btn.send:hover:not(:disabled){box-shadow:0 6px 22px rgba(59,130,246,.6)}
 .input-hint{display:none}
@@ -542,6 +543,7 @@ button:active:not(:disabled){transform:scale(.96)}
         <div class="input-wrap">
           <textarea class="chat-ta" id="chatInput" placeholder="Tape ou parle 🎤..." rows="1" onkeydown="onKey(event)" oninput="grow(this)"></textarea>
           <div class="inp-actions">
+            <button class="ia-btn" id="promptModeBtn" onclick="togglePromptMode()" title="Mode Prompteur : je te propose un prompt parfait à valider avant l'envoi">✨</button>
             <button class="ia-btn" id="micBtn" onclick="toggleVoice()">🎤</button>
             <button class="ia-btn" onclick="document.getElementById('imgInp').click()">🖼️</button>
             <input type="file" id="imgInp" accept="image/*" style="display:none" onchange="handleImg(this)">
@@ -590,6 +592,8 @@ button:active:not(:disabled){transform:scale(.96)}
 </div>
 
 <!-- MODALS -->
+<div class="overlay" id="promptModal" onclick="bgClose(event,'promptModal')"><div class="modal"><div class="modal-h"><h3>✨ Validation du prompt</h3><button class="mx" onclick="cancelPrompt()">✕</button></div><div class="modal-body"><div style="font-size:13px;color:var(--text2)">J'ai transformé ta demande en prompt optimisé. Vérifie-le, modifie-le si besoin, puis valide.</div><div class="field"><div class="flbl">Ta demande</div><div id="promptOriginal" style="font-size:13px;color:var(--text3);background:var(--bg2);border:1px solid var(--line);border-radius:11px;padding:10px 12px;line-height:1.5"></div></div><div class="field"><div class="flbl">Prompt proposé (modifiable)</div><textarea class="fta" id="promptDraft" style="min-height:150px"></textarea></div><div id="promptStatus" class="st-neu">&nbsp;</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-p" style="flex:2;min-width:160px" onclick="confirmPrompt()">✅ Valider &amp; envoyer</button><button class="btn-sec" style="flex:1" onclick="regenPrompt()">🔄 Régénérer</button><button class="btn-danger" onclick="cancelPrompt()">Annuler</button></div></div></div></div>
+
 <div class="overlay" id="updateModal" onclick="bgClose(event,'updateModal')"><div class="modal wide"><div class="modal-h"><h3>🔔 CENTRE DE MISES À JOUR IA</h3><button class="mx" onclick="closeM('updateModal')">✕</button></div><div class="modal-body" id="updateBody"></div><div class="modal-foot">Mises à jour proposées — jamais automatiques.</div></div></div>
 
 <div class="overlay" id="newProjModal" onclick="bgClose(event,'newProjModal')"><div class="modal wide"><div class="modal-h"><h3>📁 NOUVEAU PROJET</h3><button class="mx" onclick="closeM('newProjModal')">✕</button></div><div class="modal-body"><div style="display:grid;grid-template-columns:60px 1fr;gap:10px"><div class="field"><div class="flbl">Emoji</div><input class="finp" id="np-emoji" placeholder="📦" maxlength="4" style="font-size:20px;text-align:center"></div><div class="field"><div class="flbl">Nom *</div><input class="finp" id="np-name" placeholder="Ex: Boutique en ligne..."></div></div><div class="field"><div class="flbl">Description</div><input class="finp" id="np-desc" placeholder="Ex: Lancer une boutique Shopify"></div><div class="field"><div class="flbl">Couleur</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="pb-opt selected" onclick="selColor('#8b5cf6',this)">🟣 Violet</button><button class="pb-opt" onclick="selColor('#3b82f6',this)">🔵 Bleu</button><button class="pb-opt" onclick="selColor('#10b981',this)">🟢 Vert</button><button class="pb-opt" onclick="selColor('#f59e0b',this)">🟡 Or</button><button class="pb-opt" onclick="selColor('#ef4444',this)">🔴 Rouge</button></div></div><div id="npSt" class="st-neu">&nbsp;</div><div style="display:flex;gap:8px"><button class="btn-p" style="flex:1" onclick="createProject(false)">CRÉER</button><button class="btn-p purple" style="flex:1" onclick="createProject(true)">✨ AVEC PROMPT</button></div></div></div></div>
@@ -681,6 +685,89 @@ function optimizePrompt(text) {
   if (/\b(plan|strategie|business plan|projet|lancer|roadmap)\b/.test(t))
     d.push("Structure un plan d'action priorisé avec des étapes réalistes.");
   return d.length ? "\n\nFORMAT ATTENDU : " + d.join(' ') : "";
+}
+
+// ── MODE PROMPTEUR (validation avant envoi) ──
+const PROMPT_ENGINEER = "Tu es un expert mondial en prompt engineering. À partir de la demande de l'utilisateur, rédige EN FRANÇAIS un prompt optimisé : clair, complet, précis, prêt à envoyer à une IA pour obtenir la meilleure réponse possible. Intègre le contexte utile, précise le format de sortie souhaité et les contraintes implicites, sans dénaturer l'intention. IMPORTANT : ne réponds PAS à la demande et n'ajoute aucun commentaire ni guillemets — renvoie UNIQUEMENT le texte du prompt amélioré.";
+let promptMode = false;
+let _bypassReview = false;
+let _promptOriginal = '';
+
+function togglePromptMode() {
+  promptMode = !promptMode;
+  SEC.setPlain('promptMode', promptMode ? '1' : '0');
+  document.getElementById('promptModeBtn')?.classList.toggle('active-mode', promptMode);
+  toast(promptMode ? '✨ Mode Prompteur activé — je te proposerai un prompt à valider' : 'Mode Prompteur désactivé');
+}
+
+// Appel IA à un seul tour (sans l'historique du chat)
+async function askOnce(ai, sys, userMsg) {
+  if (ai.type === 'gemini') return callGemini(getKey(ai), sys, [], null, userMsg);
+  const res = await fetch(ai.url, { method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${getKey(ai)}`}, body:JSON.stringify({ model:ai.model, messages:[{role:'system',content:sys},{role:'user',content:userMsg}], max_tokens:700, temperature:0.5 }) });
+  if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error?.message||e.message||`HTTP ${res.status}`); }
+  const d = await res.json();
+  const txt = d.choices?.[0]?.message?.content; if (!txt) throw new Error('Réponse vide');
+  return txt;
+}
+
+// Génère un prompt optimisé via une IA rapide disponible
+async function genOptimizedPrompt(text, variation) {
+  const avail = getAllAIs().filter(a => !!getKey(a));
+  if (!avail.length) { openM('keysModal'); throw new Error('aucune clé configurée'); }
+  const fast = ['groq','cerebras','gemini','mistral','deepseek'];
+  let ai = null; for (const id of fast) { ai = avail.find(a => a.id===id); if (ai) break; } if (!ai) ai = avail[0];
+  let sys = PROMPT_ENGINEER;
+  if (variation) sys += " Propose une variante sensiblement différente et encore meilleure que la précédente.";
+  return (await askOnce(ai, sys, text)).trim();
+}
+
+// Ouvre l'écran de validation et lance la génération
+async function openPromptReview(text) {
+  _promptOriginal = text;
+  document.getElementById('promptOriginal').textContent = text;
+  const draft = document.getElementById('promptDraft');
+  const st = document.getElementById('promptStatus');
+  draft.value = ''; draft.disabled = true;
+  st.textContent = '⏳ Je prépare le prompt parfait...'; st.className = 'st-neu';
+  openM('promptModal');
+  try {
+    const p = await genOptimizedPrompt(text);
+    draft.value = p; draft.disabled = false; st.textContent = '';
+    draft.focus();
+  } catch (e) {
+    draft.disabled = false; draft.value = text;
+    st.textContent = '⚠ Génération impossible (' + e.message + '). Voici ta demande — modifie-la si besoin.';
+    st.className = 'st-err';
+  }
+}
+
+async function regenPrompt() {
+  const draft = document.getElementById('promptDraft');
+  const st = document.getElementById('promptStatus');
+  draft.disabled = true; st.textContent = '⏳ Nouvelle proposition...'; st.className = 'st-neu';
+  try {
+    const p = await genOptimizedPrompt(_promptOriginal, true);
+    draft.value = p; st.textContent = '';
+  } catch (e) {
+    st.textContent = '⚠ ' + e.message; st.className = 'st-err';
+  }
+  draft.disabled = false;
+}
+
+function confirmPrompt() {
+  const v = document.getElementById('promptDraft').value.trim();
+  if (!v) return;
+  closeM('promptModal');
+  const inp = document.getElementById('chatInput');
+  inp.value = v;
+  _bypassReview = true;
+  send();
+}
+
+function cancelPrompt() {
+  closeM('promptModal');
+  const inp = document.getElementById('chatInput');
+  inp.value = _promptOriginal; grow(inp); inp.focus();
 }
 
 const PB_QUESTIONS = [
@@ -961,6 +1048,8 @@ function setSessionDur(h) {
 function initApp() {
   renderAIList(); buildKeysModal(); buildCatalog(); buildUpdateCenter();
   refreshCheckKeys(); refreshMemCount(); renderProjects();
+  promptMode = SEC.plain('promptMode','0') === '1';
+  document.getElementById('promptModeBtn')?.classList.toggle('active-mode', promptMode);
   document.getElementById('nameInp').value = getName();
   const sd = SEC.plain('sessDur','8');
   document.getElementById('sessDurSel').value = sd;
@@ -1567,6 +1656,10 @@ async function send() {
   const text=inp.value.trim();
   const hasImg=!!pendingImg, hasFile=!!pendingFile;
   if (!text&&!hasImg&&!hasFile) return;
+
+  // Mode Prompteur : on propose d'abord un prompt à valider (sauf image/fichier)
+  if (promptMode && text && !_bypassReview && !hasImg && !hasFile) { openPromptReview(text); return; }
+  _bypassReview = false;
 
   let chosenAI, routeReason='general';
   if (manualAI) {
