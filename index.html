@@ -1959,23 +1959,25 @@ async function send() {
   };
 
   // Affichage en direct façon « machine à écrire » : fluide même si l'IA répond très vite
-  let liveWrap=null, liveBubble=null, shown='', pending='', streamEnded=false, pumpId=0, pumpResolve=null, pumpDone=null;
+  let liveWrap=null, liveBubble=null, shown='', pending='', streamEnded=false, pumpId=0, pumpResolve=null, pumpDone=null, lastT=0;
+  const CPS=42; // vitesse d'affichage cible (caractères/seconde)
   const scrollMsgs=()=>{ const c=document.getElementById('messages'); c.scrollTop=c.scrollHeight; };
-  function pump(myId){
+  function pump(myId, t){
     if (myId!==pumpId) return;
+    const now=t||performance.now(); if (!lastT) lastT=now;
     if (pending.length) {
-      const step=Math.max(1, Math.ceil(pending.length/70)); // accélère si du retard s'accumule
-      shown+=pending.slice(0,step); pending=pending.slice(step);
-      if (liveBubble) { liveBubble.innerHTML=md(shown); scrollMsgs(); }
-    }
+      let n=Math.floor((now-lastT)/1000*CPS);
+      if (pending.length>500) n=Math.max(n, Math.ceil(pending.length/80)); // rattrape un gros retard
+      if (n>0) { shown+=pending.slice(0,n); pending=pending.slice(n); lastT=now; if (liveBubble) { liveBubble.innerHTML=md(shown); scrollMsgs(); } }
+    } else { lastT=now; }
     if (streamEnded && !pending.length) { pumpResolve && pumpResolve(); return; }
-    requestAnimationFrame(()=>pump(myId));
+    requestAnimationFrame(ts=>pump(myId,ts));
   }
   const onChunk = chunk => {
-    if (!liveWrap) { removeTyping(); liveWrap=appendLiveAssistant(); liveBubble=liveWrap.querySelector('.msg-bubble'); pumpDone=new Promise(r=>pumpResolve=r); pump(++pumpId); }
+    if (!liveWrap) { removeTyping(); liveWrap=appendLiveAssistant(); liveBubble=liveWrap.querySelector('.msg-bubble'); lastT=0; pumpDone=new Promise(r=>pumpResolve=r); pump(++pumpId); }
     pending += chunk;
   };
-  const resetLive = () => { pumpId++; if (pumpResolve) { pumpResolve(); pumpResolve=null; } if (liveWrap) liveWrap.remove(); liveWrap=null; liveBubble=null; shown=''; pending=''; streamEnded=false; };
+  const resetLive = () => { pumpId++; if (pumpResolve) { pumpResolve(); pumpResolve=null; } if (liveWrap) liveWrap.remove(); liveWrap=null; liveBubble=null; shown=''; pending=''; streamEnded=false; lastT=0; };
 
   let reply='', usedAI=chosenAI;
   const errors=[];
