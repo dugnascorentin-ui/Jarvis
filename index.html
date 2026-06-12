@@ -543,14 +543,15 @@ button:active:not(:disabled){transform:scale(.96)}
         <div class="no-key-alert" id="noKeyAlert" style="display:none">⚠ Aucune clé API — clique <strong style="margin:0 4px">🔑 Clés</strong></div>
         <div class="voice-ind" id="voiceInd" style="display:none">
           <div class="vwave"><span></span><span></span><span></span><span></span><span></span></div>
-          <span>Écoute...</span>
-          <button onclick="stopVoice()" style="margin-left:auto;background:none;border:none;color:var(--red);cursor:pointer;font-size:11px">Stop ✕</button>
+          <span id="voiceIndTxt">Écoute...</span>
+          <button onclick="voiceStop()" style="margin-left:auto;background:none;border:none;color:var(--red);cursor:pointer;font-size:11px">Stop ✕</button>
         </div>
         <div id="filePrevArea"></div>
         <div class="input-wrap">
           <textarea class="chat-ta" id="chatInput" placeholder="Tape ou parle 🎤..." rows="1" onkeydown="onKey(event)" oninput="grow(this)"></textarea>
           <div class="inp-actions">
             <button class="ia-btn" id="promptModeBtn" onclick="togglePromptMode()" title="Mode Prompteur : je te propose un prompt parfait à valider avant l'envoi">✨</button>
+            <button class="ia-btn" id="voiceConvoBtn" onclick="toggleVoiceConvo()" title="Mode conversation mains-libres : parle, JARVIS répond à voix haute">🎧</button>
             <button class="ia-btn" id="micBtn" onclick="toggleVoice()">🎤</button>
             <button class="ia-btn" onclick="document.getElementById('imgInp').click()">🖼️</button>
             <input type="file" id="imgInp" accept="image/*" style="display:none" onchange="handleImg(this)">
@@ -1557,6 +1558,79 @@ function speak(text) {
   u.lang=ttsLang; u.rate=1.05; window.speechSynthesis.speak(u);
 }
 
+// Lit un texte puis exécute un callback à la fin (utilisé par le mode conversation)
+function speakThen(text, cb) {
+  if (!window.speechSynthesis || !text) { cb && cb(); return; }
+  window.speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text.replace(/[#*_`>]/g,'').replace(/\n+/g,' ').substring(0,1200));
+  u.lang=ttsLang; u.rate=1.05;
+  u.onend=u.onerror=()=>{ cb && cb(); };
+  window.speechSynthesis.speak(u);
+}
+
+// ═══════════════════════════════════════
+// MODE CONVERSATION VOCALE (mains-libres)
+// ═══════════════════════════════════════
+let voiceConvo=false;
+function voiceStop(){ if (voiceConvo) stopVoiceConvo(); else stopVoice(); }
+function toggleVoiceConvo(){ voiceConvo ? stopVoiceConvo() : startVoiceConvo(); }
+
+function setConvoState(s){
+  const ind=document.getElementById('voiceInd'); const txt=document.getElementById('voiceIndTxt');
+  if (!ind) return;
+  if (!voiceConvo) { ind.style.display='none'; return; }
+  ind.style.display='flex';
+  if (txt) txt.textContent = s==='think' ? '💭 Je réfléchis...' : s==='speak' ? '🔊 Je réponds...' : '🎙️ Je t\'écoute...';
+}
+
+function startVoiceConvo(){
+  if (location.protocol!=='https:' && location.hostname!=='localhost') { toast('❌ Le micro nécessite HTTPS'); return; }
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if (!SR) { toast('❌ Micro non supporté — Safari (iPhone) ou Chrome (PC)'); return; }
+  voiceConvo=true;
+  document.getElementById('voiceConvoBtn')?.classList.add('active-mode');
+  toast('🎙️ Mode conversation activé — parle, je t\'écoute');
+  convoListen(); // démarré dans le geste utilisateur (requis iOS)
+}
+
+function stopVoiceConvo(){
+  voiceConvo=false; isRec=false;
+  try { recognition?.stop(); } catch {} recognition=null;
+  try { window.speechSynthesis?.cancel(); } catch {}
+  document.getElementById('voiceConvoBtn')?.classList.remove('active-mode');
+  document.getElementById('voiceInd').style.display='none';
+}
+
+function convoListen(){
+  if (!voiceConvo) return;
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if (!SR) { stopVoiceConvo(); return; }
+  let got=false;
+  try {
+    recognition=new SR();
+    recognition.lang=ttsLang; recognition.continuous=false; recognition.interimResults=false; recognition.maxAlternatives=1;
+    recognition.onstart=()=>{ isRec=true; setConvoState('listen'); };
+    recognition.onresult=e=>{ got=true; const t=e.results[0][0].transcript||''; try{recognition.stop();}catch{} convoTurn(t); };
+    recognition.onerror=err=>{ if (err.error==='not-allowed'||err.error==='service-not-allowed') { toast('❌ Micro refusé — autorise-le dans les réglages'); stopVoiceConvo(); } };
+    recognition.onend=()=>{ isRec=false; if (!got && voiceConvo) setTimeout(()=>{ if (voiceConvo) convoListen(); }, 250); };
+    recognition.start();
+  } catch(e) { setConvoState('listen'); }
+}
+
+async function convoTurn(transcript){
+  if (!transcript.trim()) { if (voiceConvo) convoListen(); return; }
+  setConvoState('think');
+  const inp=document.getElementById('chatInput');
+  inp.value=transcript;
+  _bypassReview=true; // en vocal, on ne passe pas par l'écran de validation du prompteur
+  await send();
+  if (!voiceConvo) return;
+  const last=history[history.length-1];
+  const reply=(last && last.role==='assistant') ? last.content : '';
+  setConvoState('speak');
+  speakThen(reply, ()=>{ if (voiceConvo) convoListen(); });
+}
+
 // ═══════════════════════════════════════
 // FILES
 // ═══════════════════════════════════════
@@ -2018,7 +2092,7 @@ async function send() {
   if (currentProject==='general') await SEC.set('ph_general',history);
   else await SEC.set('ph_'+currentProject,history);
   tryExtractMem(userContent||displayText);
-  if (ttsOn) speak(reply);
+  if (ttsOn && !voiceConvo) speak(reply);
   busy=false; document.getElementById('sendBtn').disabled=false; inp.focus();
 }
 
