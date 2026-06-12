@@ -1964,7 +1964,7 @@ async function send() {
   function pump(myId){
     if (myId!==pumpId) return;
     if (pending.length) {
-      const step=Math.max(2, Math.ceil(pending.length/45)); // accélère si du retard s'accumule
+      const step=Math.max(1, Math.ceil(pending.length/70)); // accélère si du retard s'accumule
       shown+=pending.slice(0,step); pending=pending.slice(step);
       if (liveBubble) { liveBubble.innerHTML=md(shown); scrollMsgs(); }
     }
