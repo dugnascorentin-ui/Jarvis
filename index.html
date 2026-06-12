@@ -1958,14 +1958,24 @@ async function send() {
     return callOpenAIStream(getKey(ai),ai.url,ai.model,sys,onChunk);
   };
 
-  // Affichage en direct (streaming) : le texte s'écrit au fur et à mesure
-  let liveWrap=null, liveBubble=null, acc='';
+  // Affichage en direct façon « machine à écrire » : fluide même si l'IA répond très vite
+  let liveWrap=null, liveBubble=null, shown='', pending='', streamEnded=false, pumpId=0, pumpResolve=null, pumpDone=null;
+  const scrollMsgs=()=>{ const c=document.getElementById('messages'); c.scrollTop=c.scrollHeight; };
+  function pump(myId){
+    if (myId!==pumpId) return;
+    if (pending.length) {
+      const step=Math.max(2, Math.ceil(pending.length/45)); // accélère si du retard s'accumule
+      shown+=pending.slice(0,step); pending=pending.slice(step);
+      if (liveBubble) { liveBubble.innerHTML=md(shown); scrollMsgs(); }
+    }
+    if (streamEnded && !pending.length) { pumpResolve && pumpResolve(); return; }
+    requestAnimationFrame(()=>pump(myId));
+  }
   const onChunk = chunk => {
-    if (!liveWrap) { removeTyping(); liveWrap=appendLiveAssistant(); liveBubble=liveWrap.querySelector('.msg-bubble'); }
-    acc += chunk; liveBubble.innerHTML = md(acc);
-    const c=document.getElementById('messages'); c.scrollTop=c.scrollHeight;
+    if (!liveWrap) { removeTyping(); liveWrap=appendLiveAssistant(); liveBubble=liveWrap.querySelector('.msg-bubble'); pumpDone=new Promise(r=>pumpResolve=r); pump(++pumpId); }
+    pending += chunk;
   };
-  const resetLive = () => { if (liveWrap) { liveWrap.remove(); liveWrap=null; liveBubble=null; } acc=''; };
+  const resetLive = () => { pumpId++; if (pumpResolve) { pumpResolve(); pumpResolve=null; } if (liveWrap) liveWrap.remove(); liveWrap=null; liveBubble=null; shown=''; pending=''; streamEnded=false; };
 
   let reply='', usedAI=chosenAI;
   const errors=[];
@@ -1994,6 +2004,9 @@ async function send() {
     setTimeout(()=>document.getElementById('fallbackBar').style.display='none',6000);
   }
 
+  // On laisse la machine à écrire finir d'afficher proprement avant de finaliser
+  streamEnded=true;
+  if (liveWrap && pumpDone) await pumpDone;
   removeTyping();
   if (liveWrap) liveWrap.remove();
   appendMsgDOM('assistant',reply,usedAI);
