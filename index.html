@@ -2289,19 +2289,43 @@ function detectImageRequest(text){
   return { wanted:true, prompt:p };
 }
 
-function generateImage(prompt){
-  return new Promise(resolve=>{
-    removeTyping();
-    const live=appendLiveAssistant(); const lb=live.querySelector('.msg-bubble');
-    lb.innerHTML=md('🎨 Je crée ton image…');
-    const c=document.getElementById('messages'); c.scrollTop=c.scrollHeight;
+const _loadImg = url => new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(url); im.onerror=()=>rej(new Error('chargement échoué')); im.src=url; });
+
+// Génération d'image via la clé Gemini de l'utilisateur (renvoie un data:URL)
+async function genImageGemini(prompt){
+  const ai=getAllAIs().find(a=>a.id==='gemini'); if(!ai||!getKey(ai)) return null;
+  const model='gemini-2.0-flash-preview-image-generation';
+  const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(getKey(ai))}`,
+    {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{role:'user',parts:[{text:'Génère une image : '+prompt}]}],generationConfig:{responseModalities:['TEXT','IMAGE']}})});
+  if(!res.ok) throw new Error('Gemini '+res.status);
+  const d=await res.json();
+  const part=(d.candidates?.[0]?.content?.parts||[]).find(p=>p.inlineData?.data);
+  if(!part) throw new Error('aucune image renvoyée');
+  return `data:${part.inlineData.mimeType||'image/png'};base64,${part.inlineData.data}`;
+}
+
+// Repli : service d'image gratuit (avec réessai)
+async function genImagePollinations(prompt){
+  for(let i=0;i<3;i++){
     const seed=Math.floor(Math.random()*1e6);
-    const url=`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&seed=${seed}`;
-    const img=new Image();
-    img.onload=()=>{ live.remove(); appendMsgDOM('assistant', `🎨 « ${prompt} »`, null, url); resolve({ok:true,url}); };
-    img.onerror=()=>{ live.remove(); appendMsgDOM('assistant', '❌ Je n\'ai pas réussi à générer l\'image. Réessaie ou reformule.', null); resolve({ok:false}); };
-    img.src=url;
-  });
+    const url=`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&model=flux&seed=${seed}`;
+    try { return await _loadImg(url); } catch { await new Promise(r=>setTimeout(r,1000)); }
+  }
+  throw new Error('service indisponible');
+}
+
+async function generateImage(prompt){
+  removeTyping();
+  const live=appendLiveAssistant(); const lb=live.querySelector('.msg-bubble');
+  lb.innerHTML=md('🎨 Je crée ton image…');
+  const c=document.getElementById('messages'); c.scrollTop=c.scrollHeight;
+  let src=null, err=[];
+  try { src=await genImageGemini(prompt); } catch(e){ err.push('Gemini: '+e.message); }
+  if (!src) { try { src=await genImagePollinations(prompt); } catch(e){ err.push('libre: '+e.message); } }
+  live.remove();
+  if (src) { appendMsgDOM('assistant', `🎨 « ${prompt} »`, null, src); return {ok:true}; }
+  appendMsgDOM('assistant', `❌ Génération d'image indisponible pour le moment.\n\n${err.join(' · ')}\n\nRéessaie dans un instant.`, null);
+  return {ok:false};
 }
 
 // ═══════════════════════════════════════
@@ -2518,6 +2542,7 @@ const IA_CATALOG_FULL = [
   { name:'Mistral Medium 3', company:'Mistral',   free:false, speed:'🟢 Rapide',      best:'Qualité/prix optimal',      link:'https://console.mistral.ai/api-keys',         model:'mistral-medium-latest', url:'https://api.mistral.ai/v1/chat/completions', type:'openai', color:'#ff6b35', icon:'🟠' },
   { name:'Qwen 2.5',         company:'Alibaba',   free:true,  speed:'🟢 Rapide',      best:'Multilingue, code',         link:'https://dashscope.aliyuncs.com',              model:'qwen-plus', url:'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions', type:'openai', color:'#1677ff', icon:'🔹' },
   { name:'Grok 3',           company:'xAI',       free:false, speed:'🟢 Rapide',      best:'Actualités, humour',        link:'https://console.x.ai',                        model:'grok-3', url:'https://api.x.ai/v1/chat/completions', type:'openai', color:'#fff', icon:'✖️' },
+  { name:'Perplexity Sonar', company:'Perplexity',free:false, speed:'🟢 Rapide',      best:'Recherche web, sources fiables', link:'https://www.perplexity.ai/settings/api',  model:'sonar-pro', url:'https://api.perplexity.ai/chat/completions', type:'openai', color:'#20b8cd', icon:'🔎' },
 ];
 
 // ─── Forces de chaque IA (étiquettes de capacités) ───
@@ -2534,11 +2559,12 @@ const AI_TAGS = {
   'Mistral Medium 3':['general','writing','french','value'],
   'Qwen 2.5':        ['multilingual','code','general'],
   'Grok 3':          ['web','news','general','creative'],
+  'Perplexity Sonar':['web','news','reasoning','general'],
 };
 // Note de qualité indicative (sert de départage)
 const AI_QUALITY = {
   'GPT-4o':9,'Claude Sonnet 4':9,'Gemini 2.5 Pro':9,'DeepSeek V3':8,'Mistral Large':8,
-  'Gemini 2.5 Flash':8,'Codestral':8,'Grok 3':7,'Qwen 2.5':7,'Mistral Medium 3':7,
+  'Gemini 2.5 Flash':8,'Codestral':8,'Perplexity Sonar':8,'Grok 3':7,'Qwen 2.5':7,'Mistral Medium 3':7,
   'LLaMA 4 Scout':7,'LLaMA Cerebras':6,
 };
 const TAG_LABELS = {
