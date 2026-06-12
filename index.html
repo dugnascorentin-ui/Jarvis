@@ -551,6 +551,7 @@ button:active:not(:disabled){transform:scale(.96)}
           <textarea class="chat-ta" id="chatInput" placeholder="Tape ou parle 🎤..." rows="1" onkeydown="onKey(event)" oninput="grow(this)"></textarea>
           <div class="inp-actions">
             <button class="ia-btn" id="promptModeBtn" onclick="togglePromptMode()" title="Mode Prompteur : je te propose un prompt parfait à valider avant l'envoi">✨</button>
+            <button class="ia-btn" id="councilBtn" onclick="toggleCouncil()" title="Conseil multi-IA : plusieurs IA répondent, JARVIS synthétise la meilleure réponse">🧠</button>
             <button class="ia-btn" id="voiceConvoBtn" onclick="toggleVoiceConvo()" title="Mode conversation mains-libres : parle, JARVIS répond à voix haute">🎧</button>
             <button class="ia-btn" id="micBtn" onclick="toggleVoice()">🎤</button>
             <button class="ia-btn" onclick="document.getElementById('imgInp').click()">🖼️</button>
@@ -1079,6 +1080,8 @@ function initApp() {
   refreshCheckKeys(); refreshMemCount(); renderProjects();
   promptMode = SEC.plain('promptMode','0') === '1';
   document.getElementById('promptModeBtn')?.classList.toggle('active-mode', promptMode);
+  councilMode = SEC.plain('councilMode','0') === '1';
+  document.getElementById('councilBtn')?.classList.toggle('active-mode', councilMode);
   document.getElementById('nameInp').value = getName();
   const sd = SEC.plain('sessDur','8');
   document.getElementById('sessDurSel').value = sd;
@@ -2053,9 +2056,27 @@ async function send() {
   };
   const resetLive = () => { pumpId++; if (pumpResolve) { pumpResolve(); pumpResolve=null; } if (liveWrap) liveWrap.remove(); liveWrap=null; liveBubble=null; shown=''; pending=''; streamEnded=false; lastT=0; };
 
-  let reply='', usedAI=chosenAI;
+  let reply='', usedAI=chosenAI, doneCouncil=false;
   const errors=[];
-  try {
+
+  // Mode Conseil multi-IA : plusieurs IA répondent, puis JARVIS synthétise
+  if (councilMode && !hasImg && !hasFile && getAllAIs().filter(a=>!!getKey(a)).length>=2) {
+    try {
+      removeTyping();
+      liveWrap=appendLiveAssistant(); liveBubble=liveWrap.querySelector('.msg-bubble');
+      let cacc='';
+      reply=await councilRun(sys, userContent||displayText,
+        t=>{ cacc+=t; liveBubble.innerHTML=md(cacc); scrollMsgs(); },
+        s=>{ liveBubble.innerHTML=md(s); scrollMsgs(); });
+      doneCouncil=true;
+    } catch(ce) {
+      console.warn('[JARVIS] Conseil multi-IA échoué :', ce.message);
+      errors.push('Conseil → '+ce.message);
+      resetLive();
+    }
+  }
+
+  if (!doneCouncil) try {
     reply=await tryCall(chosenAI);
   } catch(err1) {
     // On garde la vraie erreur (utile pour déboguer) au lieu de l'avaler
@@ -2173,6 +2194,49 @@ async function callGeminiStream(key,sys,prevHist,image,currentText,onChunk) {
   await _readSSE(res, obj=>{ const t=(obj.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join(''); if(t){ full+=t; onChunk(t); } });
   if (!full.trim()) throw new Error('Réponse vide');
   return full;
+}
+
+// Appel streaming mono-tour (sans historique ni recherche web) — pour la synthèse du Conseil
+async function streamOnce(ai, sys, userMsg, onChunk) {
+  if (ai.type === 'gemini') {
+    const model=AIS.find(a=>a.id==='gemini')?.model||'gemini-2.5-flash';
+    const body={system_instruction:{parts:[{text:sys}]},contents:[{role:'user',parts:[{text:userMsg}]}],generationConfig:{temperature:0.6,maxOutputTokens:8192}};
+    const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(getKey(ai))}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if (!res.ok || !res.body) { const e=await res.json().catch(()=>({})); throw new Error(e.error?.message||`HTTP ${res.status}`); }
+    let full=''; await _readSSE(res, obj=>{ const t=(obj.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join(''); if(t){ full+=t; onChunk(t); } });
+    if (!full.trim()) throw new Error('Réponse vide'); return full;
+  }
+  const res=await fetch(ai.url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${getKey(ai)}`},body:JSON.stringify({model:ai.model,messages:[{role:'system',content:sys},{role:'user',content:userMsg}],max_tokens:8192,temperature:0.6,stream:true})});
+  if (!res.ok || !res.body) { const e=await res.json().catch(()=>({})); throw new Error(e.error?.message||e.message||`HTTP ${res.status}`); }
+  let full=''; await _readSSE(res, obj=>{ const t=obj.choices?.[0]?.delta?.content; if(t){ full+=t; onChunk(t); } });
+  if (!full.trim()) throw new Error('Réponse vide'); return full;
+}
+
+// Conseil multi-IA : interroge plusieurs IA en parallèle puis synthétise la meilleure réponse
+let councilMode=false;
+function toggleCouncil(){
+  councilMode=!councilMode;
+  SEC.setPlain('councilMode', councilMode?'1':'0');
+  document.getElementById('councilBtn')?.classList.toggle('active-mode', councilMode);
+  toast(councilMode?'🧠 Conseil multi-IA activé — plusieurs IA réfléchissent ensemble':'Conseil multi-IA désactivé');
+}
+async function councilRun(sys, userText, onChunk, onStatus){
+  const avail=getAllAIs().filter(a=>!!getKey(a));
+  const order=['gemini','deepseek','mistral','groq','cerebras'];
+  const picks=[];
+  for (const id of order){ const ai=avail.find(a=>a.id===id); if (ai) picks.push(ai); if (picks.length>=3) break; }
+  for (const ai of avail){ if (picks.length>=3) break; if (!picks.includes(ai)) picks.push(ai); }
+  if (picks.length<2) throw new Error('au moins 2 IA configurées nécessaires');
+  onStatus && onStatus(`🧠 Je consulte ${picks.length} IA en parallèle…`);
+  const results=await Promise.allSettled(picks.map(ai=>askOnce(ai, sys, userText)));
+  const good=[];
+  results.forEach((r,i)=>{ if (r.status==='fulfilled' && r.value && r.value.trim()) good.push({name:picks[i].name, text:r.value.trim()}); });
+  if (!good.length) throw new Error('aucune IA n\'a répondu');
+  if (good.length===1) { onChunk && onChunk(good[0].text); return good[0].text; }
+  onStatus && onStatus(`⚗️ Je synthétise la meilleure réponse à partir de ${good.length} IA…`);
+  const synthSys = JARVIS_BASE + " On te fournit plusieurs réponses d'experts à une même question. Produis LA meilleure réponse finale possible : combine leurs points forts, corrige les erreurs et contradictions, garde le plus pertinent et exact. Ne mentionne pas qu'il y a plusieurs sources — réponds directement, de façon complète et bien structurée.";
+  const synthUser = `QUESTION :\n${userText}\n\n` + good.map((a,i)=>`=== Réponse ${i+1} ===\n${a.text}`).join('\n\n') + `\n\nRédige maintenant la meilleure réponse finale.`;
+  return await streamOnce(picks[0], synthSys, synthUser, onChunk);
 }
 
 // ═══════════════════════════════════════
