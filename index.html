@@ -685,7 +685,7 @@ const PROMPTS = {
 // produise exactement le bon format de réponse, sans que l'utilisateur
 // ait à le préciser.
 function optimizePrompt(text) {
-  const t = (text||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  const t = (text||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const d = [];
   if (/\b(comment|etape|etapes|tuto|guide|installe|configure|mettre en place)\b/.test(t))
     d.push("Réponds sous forme d'étapes numérotées claires et concrètes.");
@@ -1854,7 +1854,7 @@ const _wordShell = html => `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-
 
 // Détecte si l'utilisateur demande un fichier téléchargeable, et lequel
 function detectDocRequest(text) {
-  const t = (text||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  const t = (text||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   if (/\bpdf\b/.test(t)) return { wanted:true, format:'pdf', icon:'📑', ext:'PDF' };
   if (/\b(excel|csv|tableur|feuille de calcul)\b/.test(t)) return { wanted:true, format:'csv', icon:'📊', ext:'CSV' };
   if (/\b(word|docx?|document|lettre|cv|curriculum|rapport|contrat|courrier|attestation|devis|facture|memo|note de service|fichier word)\b/.test(t)) return { wanted:true, format:'doc', icon:'📄', ext:'WORD' };
@@ -1991,9 +1991,26 @@ async function send() {
   const hasImg=!!pendingImg, hasFile=!!pendingFile;
   if (!text&&!hasImg&&!hasFile) return;
 
-  // Mode Prompteur : on propose d'abord un prompt à valider (sauf image/fichier)
-  if (promptMode && text && !_bypassReview && !hasImg && !hasFile) { openPromptReview(text); return; }
+  // Demande de génération d'image ? (prioritaire, court-circuite le reste)
+  const imgGen = text ? detectImageRequest(text) : {wanted:false};
+
+  // Mode Prompteur : on propose d'abord un prompt à valider (sauf image/fichier/génération d'image)
+  if (promptMode && text && !_bypassReview && !hasImg && !hasFile && !imgGen.wanted) { openPromptReview(text); return; }
   _bypassReview = false;
+
+  // Génération d'image : on affiche la demande puis on crée l'image
+  if (imgGen.wanted && !hasImg && !hasFile) {
+    busy=true;
+    document.getElementById('sendBtn').disabled=true;
+    document.getElementById('welcomeEl')?.remove();
+    inp.value=''; inp.style.height='auto';
+    appendMsgDOM('user', text, null, null);
+    history.push({role:'user',content:text});
+    const r=await generateImage(imgGen.prompt);
+    history.push({role:'assistant',content: r.ok ? `[Image générée : ${imgGen.prompt}]` : '[Échec de la génération d\'image]'});
+    if (currentProject==='general') await SEC.set('ph_general',history); else await SEC.set('ph_'+currentProject,history);
+    busy=false; document.getElementById('sendBtn').disabled=false; inp.focus(); return;
+  }
 
   let chosenAI, routeReason='general';
   if (manualAI) {
@@ -2243,6 +2260,38 @@ async function councilRun(sys, userText, onChunk, onStatus){
   const synthSys = JARVIS_BASE + " On te fournit plusieurs réponses d'experts à une même question. Produis LA meilleure réponse finale possible : combine leurs points forts, corrige les erreurs et contradictions, garde le plus pertinent et exact. Ne mentionne pas qu'il y a plusieurs sources — réponds directement, de façon complète et bien structurée.";
   const synthUser = `QUESTION :\n${userText}\n\n` + good.map((a,i)=>`=== Réponse ${i+1} ===\n${a.text}`).join('\n\n') + `\n\nRédige maintenant la meilleure réponse finale.`;
   return await streamOnce(picks[0], synthSys, synthUser, onChunk);
+}
+
+// ═══════════════════════════════════════
+// GÉNÉRATION D'IMAGES
+// ═══════════════════════════════════════
+function detectImageRequest(text){
+  const t=(text||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const trigger = /\b(dessine|dessin|illustration|logo|visuel)\b/.test(t)
+    || /\b(image|photo|affiche|wallpaper|fond d'?ecran|avatar|banniere|miniature)\b/.test(t) && /\b(cree|creer|genere|generer|fais|faire|dessine|montre|veux|voudrais|besoin|donne|nouvelle?|un|une)\b/.test(t);
+  if (!trigger) return { wanted:false };
+  // On retire seulement les verbes de commande en tête, on garde la description
+  let p = (text||'')
+    .replace(/^[\s,]*(peux-tu|pourrais-tu|stp|s'il te pla[iî]t)\s*/i,'')
+    .replace(/^(cr[ée]e?(?:-moi)?|cr[ée]er|g[ée]n[èe]re?(?:-moi)?|g[ée]n[ée]rer|fais(?:-moi)?|faire|dessine(?:-moi)?|montre(?:-moi)?|donne(?:-moi)?|je veux|je voudrais|j'aimerais|il me faut)\b[\s,:–-]*/i,'')
+    .trim();
+  if (!p || p.length<3) p = text;
+  return { wanted:true, prompt:p };
+}
+
+function generateImage(prompt){
+  return new Promise(resolve=>{
+    removeTyping();
+    const live=appendLiveAssistant(); const lb=live.querySelector('.msg-bubble');
+    lb.innerHTML=md('🎨 Je crée ton image…');
+    const c=document.getElementById('messages'); c.scrollTop=c.scrollHeight;
+    const seed=Math.floor(Math.random()*1e6);
+    const url=`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&seed=${seed}`;
+    const img=new Image();
+    img.onload=()=>{ live.remove(); appendMsgDOM('assistant', `🎨 « ${prompt} »`, null, url); resolve({ok:true,url}); };
+    img.onerror=()=>{ live.remove(); appendMsgDOM('assistant', '❌ Je n\'ai pas réussi à générer l\'image. Réessaie ou reformule.', null); resolve({ok:false}); };
+    img.src=url;
+  });
 }
 
 // ═══════════════════════════════════════
@@ -2560,7 +2609,7 @@ function aiCardHTML(ai, reasonTxt) {
 function advise(query) {
   const body = document.getElementById('iaCatalogBody');
   if (!body) return;
-  const q = (query||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+  const q = (query||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
 
   // Vide → tout le catalogue
   if (!q) {
