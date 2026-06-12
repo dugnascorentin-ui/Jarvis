@@ -1954,9 +1954,18 @@ async function send() {
   const sys=(PROMPTS[modeKey]||PROMPTS.auto)+autoPrompt+docDirective+projPrompt+memCtx;
 
   const tryCall=async ai=>{
-    if (ai.type==='gemini') return callGemini(getKey(ai),sys,history.slice(0,-1),savedImg,userContent||displayText);
-    return callOpenAI(getKey(ai),ai.url,ai.model,sys);
+    if (ai.type==='gemini') return callGeminiStream(getKey(ai),sys,history.slice(0,-1),savedImg,userContent||displayText,onChunk);
+    return callOpenAIStream(getKey(ai),ai.url,ai.model,sys,onChunk);
   };
+
+  // Affichage en direct (streaming) : le texte s'écrit au fur et à mesure
+  let liveWrap=null, liveBubble=null, acc='';
+  const onChunk = chunk => {
+    if (!liveWrap) { removeTyping(); liveWrap=appendLiveAssistant(); liveBubble=liveWrap.querySelector('.msg-bubble'); }
+    acc += chunk; liveBubble.innerHTML = md(acc);
+    const c=document.getElementById('messages'); c.scrollTop=c.scrollHeight;
+  };
+  const resetLive = () => { if (liveWrap) { liveWrap.remove(); liveWrap=null; liveBubble=null; } acc=''; };
 
   let reply='', usedAI=chosenAI;
   const errors=[];
@@ -1966,12 +1975,13 @@ async function send() {
     // On garde la vraie erreur (utile pour déboguer) au lieu de l'avaler
     errors.push(`${chosenAI.name} → ${err1.message}`);
     console.warn(`[JARVIS] ${chosenAI.name} a échoué :`, err1.message);
+    resetLive();
     // Fallback automatique sur les autres IAs disponibles
     const fallbacks=getAllAIs().filter(ai=>!!getKey(ai)&&ai.id!==chosenAI.id);
     let ok=false;
     for (const fb of fallbacks) {
       try { reply=await tryCall(fb); usedAI=fb; ok=true; break; }
-      catch(err2) { errors.push(`${fb.name} → ${err2.message}`); console.warn(`[JARVIS] ${fb.name} a échoué :`, err2.message); }
+      catch(err2) { errors.push(`${fb.name} → ${err2.message}`); console.warn(`[JARVIS] ${fb.name} a échoué :`, err2.message); resetLive(); }
     }
     if (!ok) {
       removeTyping();
@@ -1985,6 +1995,7 @@ async function send() {
   }
 
   removeTyping();
+  if (liveWrap) liveWrap.remove();
   appendMsgDOM('assistant',reply,usedAI);
   // Si l'utilisateur a demandé un fichier, on ajoute une carte téléchargeable dans le chat
   if (docReq.wanted) appendFileCard(reply, docReq);
@@ -2025,6 +2036,54 @@ async function callOpenAI(key,url,model,sys) {
   const d=await res.json();
   const txt=d.choices?.[0]?.message?.content; if (!txt) throw new Error('Réponse vide');
   return txt;
+}
+
+// Message assistant "vivant" pour le streaming (bulle qui se remplit en direct)
+function appendLiveAssistant() {
+  document.getElementById('welcomeEl')?.remove();
+  const c=document.getElementById('messages');
+  const wrap=document.createElement('div'); wrap.className='msg assistant';
+  wrap.innerHTML=`<div class="msg-av">⚡</div><div class="msg-content"><div class="msg-bubble"></div></div>`;
+  c.appendChild(wrap); c.scrollTop=c.scrollHeight; return wrap;
+}
+
+// Lit un flux SSE (Server-Sent Events) ligne par ligne
+async function _readSSE(res, onEvent) {
+  const reader=res.body.getReader(); const dec=new TextDecoder(); let buf='';
+  const handle=line=>{ line=line.replace(/\r$/,''); if(line.startsWith('data:')){ const data=line.slice(5).trim(); if(data&&data!=='[DONE]'){ try{ onEvent(JSON.parse(data)); }catch{} } } };
+  while(true){
+    const {done,value}=await reader.read(); if(done) break;
+    buf+=dec.decode(value,{stream:true});
+    let i; while((i=buf.indexOf('\n'))>=0){ handle(buf.slice(0,i)); buf=buf.slice(i+1); }
+  }
+  if(buf) handle(buf);
+}
+
+// Appel streaming OpenAI-compatible (Groq, Mistral, DeepSeek, Cerebras...)
+async function callOpenAIStream(key,url,model,sys,onChunk) {
+  const messages=[{role:'system',content:sys},...history.map(m=>({role:m.role,content:m.content}))];
+  const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},body:JSON.stringify({model,messages,max_tokens:8192,temperature:0.7,stream:true})});
+  if (!res.ok || !res.body) { const e=await res.json().catch(()=>({})); throw new Error(e.error?.message||e.message||`HTTP ${res.status}`); }
+  let full='';
+  await _readSSE(res, obj=>{ const t=obj.choices?.[0]?.delta?.content; if(t){ full+=t; onChunk(t); } });
+  if (!full.trim()) throw new Error('Réponse vide');
+  return full;
+}
+
+// Appel streaming Gemini
+async function callGeminiStream(key,sys,prevHist,image,currentText,onChunk) {
+  const contents=prevHist.map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:m.content}]}));
+  const parts=[]; if(image)parts.push({inlineData:{mimeType:image.mimeType,data:image.base64}});
+  parts.push({text:currentText||'Analyse.'}); contents.push({role:'user',parts});
+  const model=AIS.find(a=>a.id==='gemini')?.model||'gemini-2.5-flash';
+  const body={system_instruction:{parts:[{text:sys}]},contents,generationConfig:{temperature:0.7,maxOutputTokens:8192}};
+  if (!image) body.tools=[{google_search:{}}];
+  const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if (!res.ok || !res.body) { const e=await res.json().catch(()=>({})); throw new Error(e.error?.message||`HTTP ${res.status}`); }
+  let full='';
+  await _readSSE(res, obj=>{ const t=(obj.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join(''); if(t){ full+=t; onChunk(t); } });
+  if (!full.trim()) throw new Error('Réponse vide');
+  return full;
 }
 
 // ═══════════════════════════════════════
