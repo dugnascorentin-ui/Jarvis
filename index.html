@@ -411,6 +411,13 @@ button:active:not(:disabled){transform:scale(.96)}
 .chat-ta{font-size:15px}
 .ia-btn{width:36px;height:36px;border-radius:50%;font-size:15px}
 .ia-btn.active-mode{background:linear-gradient(135deg,#7c5cff,#a855f7);border-color:transparent;color:#fff;box-shadow:0 4px 14px rgba(124,92,255,.45)}
+.input-tools{display:flex;gap:6px;margin-bottom:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px;scrollbar-width:none}
+.input-tools::-webkit-scrollbar{display:none}
+.tool-btn{display:flex;align-items:center;gap:5px;flex-shrink:0;padding:7px 13px;border-radius:20px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);color:var(--text2);font-size:12.5px;font-weight:500;white-space:nowrap;transition:all .18s}
+.tool-btn span{font-size:14px;line-height:1}
+.tool-btn:hover{border-color:var(--blue);color:var(--blue2)}
+.tool-btn:active{transform:scale(.96)}
+.tool-btn.active-mode{background:linear-gradient(135deg,#7c5cff,#a855f7);border-color:transparent;color:#fff;box-shadow:0 4px 14px rgba(124,92,255,.4)}
 .file-card{display:flex;align-items:center;gap:12px;margin-top:10px;padding:12px 14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:14px;cursor:pointer;transition:all .18s;width:100%;max-width:300px;text-align:left;backdrop-filter:blur(10px)}
 .file-card:hover{border-color:var(--blue);background:rgba(79,124,255,.08);transform:translateY(-1px);box-shadow:0 8px 22px rgba(0,0,0,.3)}
 .fc-icon{font-size:26px;flex-shrink:0}
@@ -547,21 +554,20 @@ button:active:not(:disabled){transform:scale(.96)}
           <button onclick="voiceStop()" style="margin-left:auto;background:none;border:none;color:var(--red);cursor:pointer;font-size:11px">Stop ✕</button>
         </div>
         <div id="filePrevArea"></div>
-        <div class="input-wrap">
-          <textarea class="chat-ta" id="chatInput" placeholder="Tape ou parle 🎤..." rows="1" onkeydown="onKey(event)" oninput="grow(this)"></textarea>
-          <div class="inp-actions">
-            <button class="ia-btn" id="promptModeBtn" onclick="togglePromptMode()" title="Mode Prompteur : je te propose un prompt parfait à valider avant l'envoi">✨</button>
-            <button class="ia-btn" id="councilBtn" onclick="toggleCouncil()" title="Conseil multi-IA : plusieurs IA répondent, JARVIS synthétise la meilleure réponse">🧠</button>
-            <button class="ia-btn" id="voiceConvoBtn" onclick="toggleVoiceConvo()" title="Mode conversation mains-libres : parle, JARVIS répond à voix haute">🎧</button>
-            <button class="ia-btn" id="micBtn" onclick="toggleVoice()">🎤</button>
-            <button class="ia-btn" onclick="document.getElementById('imgInp').click()">🖼️</button>
-            <input type="file" id="imgInp" accept="image/*" style="display:none" onchange="handleImg(this)">
-            <button class="ia-btn" onclick="document.getElementById('fileInp').click()">📄</button>
-            <input type="file" id="fileInp" accept=".txt,.md,.csv,.json,.js,.py,.html,.css,.docx,.rtf,.xml,.yml,.yaml,.log,.ts,.java,.c,.cpp" style="display:none" onchange="handleFile(this)">
-            <button class="ia-btn send" id="sendBtn" onclick="send()">➤</button>
-          </div>
+        <div class="input-tools">
+          <button class="tool-btn" id="promptModeBtn" onclick="togglePromptMode()" title="Mode Prompteur : je te propose un prompt parfait à valider avant l'envoi"><span>✨</span>Prompteur</button>
+          <button class="tool-btn" id="councilBtn" onclick="toggleCouncil()" title="Conseil multi-IA : plusieurs IA répondent, JARVIS synthétise la meilleure réponse"><span>🧠</span>Conseil</button>
+          <button class="tool-btn" id="voiceConvoBtn" onclick="toggleVoiceConvo()" title="Mode conversation mains-libres : parle, JARVIS répond à voix haute"><span>🎧</span>Vocal</button>
+          <button class="tool-btn" onclick="document.getElementById('imgInp').click()"><span>🖼️</span>Image</button>
+          <input type="file" id="imgInp" accept="image/*" style="display:none" onchange="handleImg(this)">
+          <button class="tool-btn" onclick="document.getElementById('fileInp').click()"><span>📄</span>Fichier</button>
+          <input type="file" id="fileInp" accept=".txt,.md,.csv,.json,.js,.py,.html,.css,.docx,.rtf,.xml,.yml,.yaml,.log,.ts,.java,.c,.cpp" style="display:none" onchange="handleFile(this)">
         </div>
-        <div class="input-hint">🎤 Micro · 🖼️ Image · 📄 Fichier · Entrée = envoyer</div>
+        <div class="input-wrap">
+          <textarea class="chat-ta" id="chatInput" placeholder="Écris ton message…" rows="1" onkeydown="onKey(event)" oninput="grow(this)"></textarea>
+          <button class="ia-btn" id="micBtn" onclick="toggleVoice()">🎤</button>
+          <button class="ia-btn send" id="sendBtn" onclick="send()">➤</button>
+        </div>
       </div>
     </div>
   </div>
