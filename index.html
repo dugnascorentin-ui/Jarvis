@@ -558,7 +558,8 @@ button:active:not(:disabled){transform:scale(.96)}
           <button class="tool-btn" id="promptModeBtn" onclick="togglePromptMode()" title="Mode Prompteur : je te propose un prompt parfait à valider avant l'envoi"><span>✨</span>Prompteur</button>
           <button class="tool-btn" id="councilBtn" onclick="toggleCouncil()" title="Conseil multi-IA : plusieurs IA répondent, JARVIS synthétise la meilleure réponse"><span>🧠</span>Conseil</button>
           <button class="tool-btn" id="voiceConvoBtn" onclick="toggleVoiceConvo()" title="Mode conversation mains-libres : parle, JARVIS répond à voix haute"><span>🎧</span>Vocal</button>
-          <button class="tool-btn" onclick="document.getElementById('imgInp').click()"><span>🖼️</span>Image</button>
+          <button class="tool-btn" id="imageModeBtn" onclick="toggleImageMode()" title="Mode Image : ton prochain message génère une image"><span>🎨</span>Image</button>
+          <button class="tool-btn" onclick="document.getElementById('imgInp').click()"><span>📎</span>Joindre</button>
           <input type="file" id="imgInp" accept="image/*" style="display:none" onchange="handleImg(this)">
           <button class="tool-btn" onclick="document.getElementById('fileInp').click()"><span>📄</span>Fichier</button>
           <input type="file" id="fileInp" accept=".txt,.md,.csv,.json,.js,.py,.html,.css,.docx,.rtf,.xml,.yml,.yaml,.log,.ts,.java,.c,.cpp" style="display:none" onchange="handleFile(this)">
@@ -1088,6 +1089,8 @@ function initApp() {
   document.getElementById('promptModeBtn')?.classList.toggle('active-mode', promptMode);
   councilMode = SEC.plain('councilMode','0') === '1';
   document.getElementById('councilBtn')?.classList.toggle('active-mode', councilMode);
+  imageMode = SEC.plain('imageMode','0') === '1';
+  document.getElementById('imageModeBtn')?.classList.toggle('active-mode', imageMode);
   document.getElementById('nameInp').value = getName();
   const sd = SEC.plain('sessDur','8');
   document.getElementById('sessDurSel').value = sd;
@@ -1991,8 +1994,8 @@ async function send() {
   const hasImg=!!pendingImg, hasFile=!!pendingFile;
   if (!text&&!hasImg&&!hasFile) return;
 
-  // Demande de génération d'image ? (prioritaire, court-circuite le reste)
-  const imgGen = text ? detectImageRequest(text) : {wanted:false};
+  // Demande de génération d'image ? (mode Image explicite OU détection auto)
+  const imgGen = (text && imageMode) ? {wanted:true, prompt:text} : (text ? detectImageRequest(text) : {wanted:false});
 
   // Mode Prompteur : on propose d'abord un prompt à valider (sauf image/fichier/génération d'image)
   if (promptMode && text && !_bypassReview && !hasImg && !hasFile && !imgGen.wanted) { openPromptReview(text); return; }
@@ -2265,6 +2268,13 @@ async function councilRun(sys, userText, onChunk, onStatus){
 // ═══════════════════════════════════════
 // GÉNÉRATION D'IMAGES
 // ═══════════════════════════════════════
+let imageMode=false;
+function toggleImageMode(){
+  imageMode=!imageMode;
+  SEC.setPlain('imageMode', imageMode?'1':'0');
+  document.getElementById('imageModeBtn')?.classList.toggle('active-mode', imageMode);
+  toast(imageMode?'🎨 Mode Image activé — ton prochain message créera une image':'Mode Image désactivé');
+}
 function detectImageRequest(text){
   const t=(text||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const trigger = /\b(dessine|dessin|illustration|logo|visuel)\b/.test(t)
