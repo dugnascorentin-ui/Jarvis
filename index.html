@@ -453,6 +453,8 @@ button:active:not(:disabled){transform:scale(.96)}
 
 /* ── EN-TÊTE : verre discret ── */
 .topbar{background:rgba(10,13,20,.7);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,.06)}
+.tb-name{letter-spacing:4px}
+.tb-ver{font-family:'Inter',sans-serif;font-size:9px;letter-spacing:.3px;color:var(--text3);text-transform:none}
 .proj-bar{background:transparent;border-bottom:1px solid rgba(255,255,255,.05)}
 .proj-bar-name{font-size:14px}
 .proj-bar-sub{font-size:10px}
@@ -493,7 +495,7 @@ button:focus:not(:focus-visible){outline:none}
 <!-- APP -->
 <div id="app">
   <div class="topbar">
-    <div style="display:flex;align-items:center;gap:8px"><div class="mini-r"></div><div><div class="tb-name">JARVIS</div><div class="tb-ver">v8.0</div></div></div>
+    <div style="display:flex;align-items:center;gap:9px"><div class="mini-r"></div><div><div class="tb-name">JARVIS</div><div class="tb-ver">Assistant IA</div></div></div>
     <div class="tb-badge"><div class="tb-dot"></div><span id="routeLabel">AUTO</span></div>
     <div class="tb-sec">🔒 <span id="sessionTimer">—</span></div>
     <div class="tb-right">
@@ -540,7 +542,7 @@ button:focus:not(:focus-visible){outline:none}
     <div class="chat-wrap">
       <div class="proj-bar">
         <div class="proj-bar-emoji" id="pbEmoji">💬</div>
-        <div class="proj-bar-info"><div class="proj-bar-name" id="pbName">Chat Général</div><div class="proj-bar-sub" id="pbSub">Toutes les IAs · routage auto</div></div>
+        <div class="proj-bar-info"><div class="proj-bar-name" id="pbName">Chat Général</div><div class="proj-bar-sub" id="pbSub">Routage intelligent activé</div></div>
         <div class="proj-bar-right" id="pbRight"></div>
       </div>
       <div class="route-bar">
@@ -1227,7 +1229,7 @@ async function switchProject(id) {
   if (id === 'general') {
     bar.emoji && (bar.emoji.textContent = '💬');
     bar.name  && (bar.name.textContent  = 'Chat Général');
-    bar.sub   && (bar.sub.textContent   = 'Toutes les IAs · routage auto');
+    bar.sub   && (bar.sub.textContent   = 'Routage intelligent activé');
     bar.right && (bar.right.innerHTML   = '');
   } else {
     const p = getProjects().find(x => x.id === id);
@@ -1478,7 +1480,12 @@ async function saveKey(id) {
   renderAIList(); refreshCheckKeys();
 }
 
-function refreshCheckKeys() { document.getElementById('noKeyAlert').style.display = getAllAIs().some(ai=>!!getKey(ai))?'none':'flex'; if(!history.length) updateWelcome(); }
+function refreshCheckKeys() {
+  const hasKey = getAllAIs().some(ai=>!!getKey(ai));
+  // L'alerte n'apparaît qu'en pleine conversation (l'onboarding gère le cas vide)
+  document.getElementById('noKeyAlert').style.display = (!hasKey && history.length>0) ? 'flex' : 'none';
+  if (!history.length) updateWelcome();
+}
 
 async function addCustomAI() {
   const get = id => document.getElementById(id)?.value.trim();
