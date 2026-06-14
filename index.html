@@ -465,6 +465,24 @@ button:active:not(:disabled){transform:scale(.96)}
 /* Panneaux mobiles : glissement fluide */
 .mobile-panel{transition:transform .3s cubic-bezier(.2,.8,.2,1),opacity .3s}
 
+/* ── CONVERSATIONS (historique) ── */
+.sb-lbl-row{display:flex;align-items:center;justify-content:space-between;margin:8px 2px 6px}
+.sb-lbl-row .sb-lbl{margin:0}
+.sb-new{width:22px;height:22px;border-radius:7px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:var(--text2);font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.sb-new:hover{border-color:var(--blue);color:var(--blue2)}
+.convo-list{display:flex;flex-direction:column;gap:3px}
+.convo-item{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:9px 10px;border-radius:11px;background:transparent;border:1px solid transparent;color:var(--text2);transition:all .15s}
+.convo-item:hover{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.08)}
+.convo-item.active{background:rgba(79,124,255,.12);border-color:rgba(79,124,255,.3);color:var(--text)}
+.convo-ic{font-size:14px;flex-shrink:0;opacity:.8}
+.convo-title{flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.convo-del{flex-shrink:0;opacity:0;color:var(--text3);font-size:12px;padding:2px 4px;border-radius:5px;transition:all .15s}
+.convo-item:hover .convo-del{opacity:.6}
+.convo-del:hover{opacity:1;color:var(--red);background:rgba(240,85,106,.12)}
+.convo-empty{font-size:12px;color:var(--text3);padding:10px;text-align:center}
+#convoListModal .convo-item{padding:12px;border:1px solid rgba(255,255,255,.07);margin-bottom:2px}
+#convoListModal .convo-del{opacity:.6}
+
 /* Détails de finition */
 ::selection{background:rgba(79,124,255,.35);color:#fff}
 :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
@@ -518,7 +536,9 @@ button:focus:not(:focus-visible){outline:none}
         <button class="mode-item" style="color:var(--gold2)" onclick="openM('newProjModal')"><span class="mode-icon">➕</span> Nouveau projet</button>
       </div>
       <div class="sb-scroll">
-        <span class="sb-lbl">🤖 IAs</span>
+        <div class="sb-lbl-row"><span class="sb-lbl">💬 Conversations</span><button class="sb-new" onclick="newChat()" title="Nouvelle conversation">＋</button></div>
+        <div id="convoListSidebar" class="convo-list"></div>
+        <span class="sb-lbl" style="margin-top:12px">🤖 IAs</span>
         <div id="aiList"></div>
         <button class="mode-item" style="color:var(--gold2)" onclick="openM('addModal')"><span class="mode-icon">➕</span> Ajouter</button>
         <span class="sb-lbl" style="margin-top:10px">⚡ Mode</span>
@@ -544,6 +564,8 @@ button:focus:not(:focus-visible){outline:none}
         <div class="proj-bar-emoji" id="pbEmoji">💬</div>
         <div class="proj-bar-info"><div class="proj-bar-name" id="pbName">Chat Général</div><div class="proj-bar-sub" id="pbSub">Routage intelligent activé</div></div>
         <div class="proj-bar-right" id="pbRight"></div>
+        <button class="pbar-btn" onclick="openConvos()" title="Historique des conversations">🕘</button>
+        <button class="pbar-btn" onclick="newChat()" title="Nouvelle conversation">✏️</button>
       </div>
       <div class="route-bar">
         <span id="chatModeLbl">Auto-routage</span>
@@ -616,6 +638,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <!-- MODALS -->
+<div class="overlay" id="convoModal" onclick="bgClose(event,'convoModal')"><div class="modal"><div class="modal-h"><h3>💬 Conversations</h3><button class="mx" onclick="closeM('convoModal')">✕</button></div><div class="modal-body"><button class="btn-p" onclick="newChat();closeM('convoModal')">✏️ Nouvelle conversation</button><div id="convoListModal" class="convo-list"></div></div></div></div>
 <div class="overlay" id="promptModal" onclick="bgClose(event,'promptModal')"><div class="modal"><div class="modal-h"><h3>✨ Validation du prompt</h3><button class="mx" onclick="cancelPrompt()">✕</button></div><div class="modal-body"><div style="font-size:13px;color:var(--text2)">J'ai transformé ta demande en prompt optimisé. Vérifie-le, modifie-le si besoin, puis valide.</div><div class="field"><div class="flbl">Ta demande</div><div id="promptOriginal" style="font-size:13px;color:var(--text3);background:var(--bg2);border:1px solid var(--line);border-radius:11px;padding:10px 12px;line-height:1.5"></div></div><div class="field"><div class="flbl">Prompt proposé (modifiable)</div><textarea class="fta" id="promptDraft" style="min-height:150px"></textarea></div><div id="promptStatus" class="st-neu">&nbsp;</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-p" style="flex:2;min-width:160px" onclick="confirmPrompt()">✅ Valider &amp; envoyer</button><button class="btn-sec" style="flex:1" onclick="regenPrompt()">🔄 Régénérer</button><button class="btn-danger" onclick="cancelPrompt()">Annuler</button></div></div></div></div>
 
 <div class="overlay" id="updateModal" onclick="bgClose(event,'updateModal')"><div class="modal wide"><div class="modal-h"><h3>🔔 CENTRE DE MISES À JOUR IA</h3><button class="mx" onclick="closeM('updateModal')">✕</button></div><div class="modal-body" id="updateBody"></div><div class="modal-foot">Mises à jour proposées — jamais automatiques.</div></div></div>
@@ -1055,6 +1078,15 @@ async function loadCache(pwd) {
   for (const ai of _cache.customAIs||[]) { const k = await SEC.get('key_'+(ai.storKey||ai.id),''); if (k) _cache.keys[ai.id] = k; }
   _cache.projects = await SEC.get('projects', []);
   _cache.memory   = await SEC.get('memory', []);
+  _cache.convos   = await SEC.get('convos', []);
+  // Migration : récupère une éventuelle conversation héritée (ancien modèle ph_general)
+  if (!_cache.convos.length) {
+    const legacy = await SEC.get('ph_general', []);
+    if (legacy && legacy.length) {
+      _cache.convos = [{ id:'legacy', title: convoTitleFrom(legacy), ts:Date.now(), project:'general', messages:legacy }];
+      await SEC.set('convos', _cache.convos);
+    }
+  }
 }
 
 function startSessTimer() {
@@ -1103,6 +1135,11 @@ function initApp() {
   const sd = SEC.plain('sessDur','8');
   document.getElementById('sessDurSel').value = sd;
   document.getElementById('sessDisplay').textContent = sd+'h';
+  // Reprend la conversation la plus récente du chat général (sinon nouvelle)
+  const recent = getConvos().find(c => (c.project||'general') === 'general');
+  if (recent) { currentConvoId = recent.id; history = (recent.messages||[]).slice(); }
+  else { currentConvoId = _cid(); history = []; }
+  renderConvos(); renderMessages();
   updateWelcome();
   const pending = AI_UPDATES.filter(u => !dismissedUpds.includes(u.id) && u.tag !== 'no');
   if (!pending.length) {
@@ -1218,11 +1255,49 @@ function renderProjects() {
   if (mp)   { mp.innerHTML=''; mp.appendChild(makeBtn(null,true)); getProjects().forEach(p => mp.appendChild(makeBtn(p,false))); }
 }
 
-async function switchProject(id) {
-  if (currentProject === 'general') await SEC.set('ph_general', history);
-  else await SEC.set('ph_'+currentProject, history);
-  currentProject = id;
-  history = id === 'general' ? (await SEC.get('ph_general',[])) : (await SEC.get('ph_'+id,[]));
+// ═══════════════════════════════════════
+// CONVERSATIONS (historique multi-chats)
+// ═══════════════════════════════════════
+let currentConvoId = null;
+const getConvos = () => _cache.convos || [];
+const saveConvos = async l => { _cache.convos = l; await SEC.set('convos', l); };
+const _cid = () => 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+function convoTitleFrom(msgs) {
+  const u = (msgs||[]).find(m => m.role === 'user');
+  let t = (u?.content || 'Nouvelle conversation').replace(/\s+/g,' ').replace(/^\[Fichier[^\]]*\]\s*/,'').trim();
+  return t.length > 46 ? t.slice(0,46) + '…' : (t || 'Nouvelle conversation');
+}
+// Sauvegarde la conversation active dans l'archive (ou la retire si vide)
+async function persistActive() {
+  if (!currentConvoId) return;
+  let list = getConvos().slice();
+  const i = list.findIndex(c => c.id === currentConvoId);
+  if (!history.length) { if (i >= 0) { list.splice(i,1); await saveConvos(list); renderConvos(); } return; }
+  if (i >= 0) list.splice(i,1);
+  list.unshift({ id:currentConvoId, title:convoTitleFrom(history), ts:Date.now(), project:currentProject, messages:history });
+  if (list.length > 100) list = list.slice(0,100);
+  await saveConvos(list);
+}
+async function newConversation() {
+  await persistActive();
+  currentConvoId = _cid(); history = []; clearPending(); renderMessages(); renderConvos();
+}
+async function loadConversation(id) {
+  await persistActive();
+  const c = getConvos().find(x => x.id === id); if (!c) return;
+  currentConvoId = id; history = (c.messages||[]).slice();
+  if ((c.project||'general') !== currentProject) { setProjectBar(c.project||'general'); currentProject = c.project||'general'; }
+  closeM('convoModal'); document.querySelectorAll('.mobile-panel').forEach(p=>p.classList.remove('visible'));
+  renderMessages(); renderConvos();
+}
+async function deleteConversation(id, ev) {
+  ev && ev.stopPropagation();
+  await saveConvos(getConvos().filter(c => c.id !== id));
+  if (id === currentConvoId) { currentConvoId = _cid(); history = []; renderMessages(); }
+  renderConvos();
+}
+// Met à jour la barre de projet (extrait de switchProject pour réutilisation)
+function setProjectBar(id) {
   document.querySelectorAll('.proj-item').forEach(b => b.classList.remove('active'));
   document.getElementById('projBtn_'+id)?.classList.add('active');
   const bar = { emoji: document.getElementById('pbEmoji'), name: document.getElementById('pbName'), sub: document.getElementById('pbSub'), right: document.getElementById('pbRight') };
@@ -1240,7 +1315,46 @@ async function switchProject(id) {
       bar.right && (bar.right.innerHTML   = `<button class="pbar-btn purple" onclick="openPBForProj('${id}')">✨ Prompt</button>`);
     }
   }
-  renderMessages();
+}
+// Rendu de la liste des conversations (sidebar PC + modale mobile)
+function renderConvos() {
+  const list = getConvos().filter(c => (c.project||'general') === currentProject);
+  const html = list.length ? list.map(c => `
+    <button class="convo-item${c.id===currentConvoId?' active':''}" onclick="loadConversation('${c.id}')">
+      <span class="convo-ic">💬</span>
+      <span class="convo-title">${escHtml(c.title)}</span>
+      <span class="convo-del" onclick="deleteConversation('${c.id}',event)" title="Supprimer">✕</span>
+    </button>`).join('')
+    : `<div class="convo-empty">Aucune conversation. Lance-toi 👇</div>`;
+  ['convoListSidebar','convoListModal'].forEach(id => { const el=document.getElementById(id); if (el) el.innerHTML = html; });
+}
+function openConvos() { renderConvos(); openM('convoModal'); }
+
+async function switchProject(id) {
+  await persistActive();
+  currentProject = id;
+  // Reprend la conversation la plus récente de ce projet, sinon nouvelle
+  const recent = getConvos().find(c => (c.project||'general') === id);
+  if (recent) { currentConvoId = recent.id; history = (recent.messages||[]).slice(); }
+  else { currentConvoId = _cid(); history = []; }
+  document.querySelectorAll('.proj-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('projBtn_'+id)?.classList.add('active');
+  const bar = { emoji: document.getElementById('pbEmoji'), name: document.getElementById('pbName'), sub: document.getElementById('pbSub'), right: document.getElementById('pbRight') };
+  if (id === 'general') {
+    bar.emoji && (bar.emoji.textContent = '💬');
+    bar.name  && (bar.name.textContent  = 'Chat Général');
+    bar.sub   && (bar.sub.textContent   = 'Routage intelligent activé');
+    bar.right && (bar.right.innerHTML   = '');
+  } else {
+    const p = getProjects().find(x => x.id === id);
+    if (p) {
+      bar.emoji && (bar.emoji.textContent = p.emoji||'📁');
+      bar.name  && (bar.name.textContent  = p.name);
+      bar.sub   && (bar.sub.textContent   = (p.desc||'Projet') + (p.prompt ? ' · Prompt ✓' : ''));
+      bar.right && (bar.right.innerHTML   = `<button class="pbar-btn purple" onclick="openPBForProj('${id}')">✨ Prompt</button>`);
+    }
+  }
+  renderMessages(); renderConvos();
 }
 
 const _reactorHTML = '<div class="reactor" style="width:60px;height:60px"><div class="rr rr1"></div><div class="rr rr2"></div><div class="rr rr3"></div><div class="rcore" style="width:18px;height:18px"></div></div>';
@@ -1314,6 +1428,7 @@ async function delProject(id) {
   if (!confirm('Supprimer ce projet ?')) return;
   await saveProjects(getProjects().filter(p => p.id !== id));
   SEC.del('ph_'+id);
+  await saveConvos(getConvos().filter(c => (c.project||'general') !== id)); // supprime les conversations du projet
   if (currentProject === id) switchProject('general');
   renderProjects();
 }
@@ -1851,7 +1966,7 @@ function autoRoute(text) {
 // ═══════════════════════════════════════
 // CHAT
 // ═══════════════════════════════════════
-function newChat() { history=[]; if(currentProject==='general')SEC.set('ph_general',[]); else SEC.set('ph_'+currentProject,[]); renderMessages(); clearPending(); }
+function newChat() { newConversation(); }
 function grow(el)  { el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,100)+'px'; }
 function onKey(e)  { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();} }
 function sendChip(t){ document.getElementById('chatInput').value=t; send(); }
@@ -2057,7 +2172,7 @@ async function send() {
     history.push({role:'user',content:text});
     const r=await generateImage(imgGen.prompt);
     history.push({role:'assistant',content: r.ok ? `[Image générée : ${imgGen.prompt}]` : '[Échec de la génération d\'image]'});
-    if (currentProject==='general') await SEC.set('ph_general',history); else await SEC.set('ph_'+currentProject,history);
+    await persistActive(); renderConvos();
     busy=false; document.getElementById('sendBtn').disabled=false; inp.focus(); return;
   }
 
@@ -2182,8 +2297,7 @@ async function send() {
   // Si l'utilisateur a demandé un fichier, on ajoute une carte téléchargeable dans le chat
   if (docReq.wanted) appendFileCard(reply, docReq);
   history.push({role:'assistant',content:reply,aiId:usedAI.id});
-  if (currentProject==='general') await SEC.set('ph_general',history);
-  else await SEC.set('ph_'+currentProject,history);
+  await persistActive(); renderConvos();
   tryExtractMem(userContent||displayText);
   if (ttsOn && !voiceConvo) speak(reply);
   busy=false; document.getElementById('sendBtn').disabled=false; inp.focus();
@@ -2429,7 +2543,8 @@ async function changePwd() {
   SEC.setPlain('verify', await CRYPTO.makeVerifier(p1));
   try { localStorage.removeItem('jv8p_pwdhash'); } catch {}
   for (const ai of getAllAIs()) { const k=_cache.keys[ai.id]; if(k) await SEC.set('key_'+(ai.storKey||ai.id),k); }
-  await SEC.set('customAIs',_cache.customAIs||[]); await SEC.set('projects',_cache.projects||[]); await SEC.set('memory',_cache.memory||[]); await SEC.set('ph_general',history);
+  await persistActive();
+  await SEC.set('customAIs',_cache.customAIs||[]); await SEC.set('projects',_cache.projects||[]); await SEC.set('memory',_cache.memory||[]); await SEC.set('convos',_cache.convos||[]);
   st.textContent='✅ Mot de passe changé et données re-chiffrées !'; st.className='st-ok';
   ['pwdCurrent','pwd1','pwd2'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
 }
