@@ -476,9 +476,11 @@ button:active:not(:disabled){transform:scale(.96)}
 .convo-item.active{background:rgba(79,124,255,.12);border-color:rgba(79,124,255,.3);color:var(--text)}
 .convo-ic{font-size:14px;flex-shrink:0;opacity:.8}
 .convo-title{flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.convo-del{flex-shrink:0;opacity:0;color:var(--text3);font-size:12px;padding:2px 4px;border-radius:5px;transition:all .15s}
-.convo-item:hover .convo-del{opacity:.6}
+.convo-del,.convo-edit{flex-shrink:0;opacity:0;color:var(--text3);font-size:12px;padding:2px 5px;border-radius:5px;transition:all .15s}
+.convo-item:hover .convo-del,.convo-item:hover .convo-edit{opacity:.55}
+.convo-edit:hover{opacity:1;color:var(--blue2);background:rgba(79,124,255,.12)}
 .convo-del:hover{opacity:1;color:var(--red);background:rgba(240,85,106,.12)}
+#convoListModal .convo-edit{opacity:.55}
 .convo-empty{font-size:12px;color:var(--text3);padding:10px;text-align:center}
 #convoListModal .convo-item{padding:12px;border:1px solid rgba(255,255,255,.07);margin-bottom:2px}
 #convoListModal .convo-del{opacity:.6}
@@ -638,7 +640,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <!-- MODALS -->
-<div class="overlay" id="convoModal" onclick="bgClose(event,'convoModal')"><div class="modal"><div class="modal-h"><h3>💬 Conversations</h3><button class="mx" onclick="closeM('convoModal')">✕</button></div><div class="modal-body"><button class="btn-p" onclick="newChat();closeM('convoModal')">✏️ Nouvelle conversation</button><div id="convoListModal" class="convo-list"></div></div></div></div>
+<div class="overlay" id="convoModal" onclick="bgClose(event,'convoModal')"><div class="modal"><div class="modal-h"><h3>💬 Conversations</h3><button class="mx" onclick="closeM('convoModal')">✕</button></div><div class="modal-body"><button class="btn-p" onclick="newChat();closeM('convoModal')">✏️ Nouvelle conversation</button><input class="finp" id="convoSearch" placeholder="🔍 Rechercher une conversation…" oninput="renderConvos()"><div id="convoListModal" class="convo-list"></div></div></div></div>
 <div class="overlay" id="promptModal" onclick="bgClose(event,'promptModal')"><div class="modal"><div class="modal-h"><h3>✨ Validation du prompt</h3><button class="mx" onclick="cancelPrompt()">✕</button></div><div class="modal-body"><div style="font-size:13px;color:var(--text2)">J'ai transformé ta demande en prompt optimisé. Vérifie-le, modifie-le si besoin, puis valide.</div><div class="field"><div class="flbl">Ta demande</div><div id="promptOriginal" style="font-size:13px;color:var(--text3);background:var(--bg2);border:1px solid var(--line);border-radius:11px;padding:10px 12px;line-height:1.5"></div></div><div class="field"><div class="flbl">Prompt proposé (modifiable)</div><textarea class="fta" id="promptDraft" style="min-height:150px"></textarea></div><div id="promptStatus" class="st-neu">&nbsp;</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-p" style="flex:2;min-width:160px" onclick="confirmPrompt()">✅ Valider &amp; envoyer</button><button class="btn-sec" style="flex:1" onclick="regenPrompt()">🔄 Régénérer</button><button class="btn-danger" onclick="cancelPrompt()">Annuler</button></div></div></div></div>
 
 <div class="overlay" id="updateModal" onclick="bgClose(event,'updateModal')"><div class="modal wide"><div class="modal-h"><h3>🔔 CENTRE DE MISES À JOUR IA</h3><button class="mx" onclick="closeM('updateModal')">✕</button></div><div class="modal-body" id="updateBody"></div><div class="modal-foot">Mises à jour proposées — jamais automatiques.</div></div></div>
@@ -1296,6 +1298,15 @@ async function deleteConversation(id, ev) {
   if (id === currentConvoId) { currentConvoId = _cid(); history = []; renderMessages(); }
   renderConvos();
 }
+async function renameConvo(id, ev) {
+  ev && ev.stopPropagation();
+  const c = getConvos().find(x => x.id === id); if (!c) return;
+  const t = prompt('Nom de la conversation :', c.title);
+  if (t === null) return;
+  const v = t.trim() || c.title;
+  await saveConvos(getConvos().map(x => x.id === id ? { ...x, title: v } : x));
+  renderConvos();
+}
 // Met à jour la barre de projet (extrait de switchProject pour réutilisation)
 function setProjectBar(id) {
   document.querySelectorAll('.proj-item').forEach(b => b.classList.remove('active'));
@@ -1316,19 +1327,27 @@ function setProjectBar(id) {
     }
   }
 }
-// Rendu de la liste des conversations (sidebar PC + modale mobile)
-function renderConvos() {
-  const list = getConvos().filter(c => (c.project||'general') === currentProject);
-  const html = list.length ? list.map(c => `
-    <button class="convo-item${c.id===currentConvoId?' active':''}" onclick="loadConversation('${c.id}')">
+// Rendu de la liste des conversations (sidebar PC + modale avec recherche)
+function _convoItemHTML(c) {
+  return `<button class="convo-item${c.id===currentConvoId?' active':''}" onclick="loadConversation('${c.id}')">
       <span class="convo-ic">💬</span>
       <span class="convo-title">${escHtml(c.title)}</span>
+      <span class="convo-edit" onclick="renameConvo('${c.id}',event)" title="Renommer">✎</span>
       <span class="convo-del" onclick="deleteConversation('${c.id}',event)" title="Supprimer">✕</span>
-    </button>`).join('')
-    : `<div class="convo-empty">Aucune conversation. Lance-toi 👇</div>`;
-  ['convoListSidebar','convoListModal'].forEach(id => { const el=document.getElementById(id); if (el) el.innerHTML = html; });
+    </button>`;
 }
-function openConvos() { renderConvos(); openM('convoModal'); }
+function renderConvos() {
+  const list = getConvos().filter(c => (c.project||'general') === currentProject);
+  const sb = document.getElementById('convoListSidebar');
+  if (sb) sb.innerHTML = list.length ? list.map(_convoItemHTML).join('') : `<div class="convo-empty">Aucune conversation</div>`;
+  const md = document.getElementById('convoListModal');
+  if (md) {
+    const q = (document.getElementById('convoSearch')?.value || '').toLowerCase().trim();
+    const f = q ? list.filter(c => c.title.toLowerCase().includes(q)) : list;
+    md.innerHTML = f.length ? f.map(_convoItemHTML).join('') : `<div class="convo-empty">${list.length?'Aucun résultat':'Aucune conversation. Lance-toi 👇'}</div>`;
+  }
+}
+function openConvos() { const s=document.getElementById('convoSearch'); if(s) s.value=''; renderConvos(); openM('convoModal'); }
 
 async function switchProject(id) {
   await persistActive();
