@@ -524,6 +524,7 @@ button:focus:not(:focus-visible){outline:none}
       <button class="tb-btn gold" onclick="openM('addModal')">➕ IA</button>
       <button class="tb-btn" onclick="openIACatalog()" style="border-color:rgba(139,92,246,.4);color:#c4b5fd">🧠 Conseiller</button>
       <button class="tb-btn" onclick="openM('keysModal')">🔑 Clés</button>
+      <button class="tb-btn" onclick="openStudio()">🎨 Thème</button>
       <button class="tb-btn" onclick="openM('settModal')">⚙</button>
     </div>
   </div>
@@ -628,6 +629,7 @@ button:focus:not(:focus-visible){outline:none}
       <button class="btn-p purple" onclick="openM('pbModal')">✨ Prompt Builder</button>
       <button class="btn-p muted" onclick="openM('guideModal')">📖 Guide API</button>
       <button class="btn-p muted" onclick="openM('memModal')">🧠 Mémoire</button>
+      <button class="btn-p muted" onclick="openStudio()">🎨 Personnaliser l'apparence</button>
       <button class="btn-p muted" onclick="openM('settModal')">🔒 Sécurité</button>
       <button class="mode-item" onclick="toggleTTS()"><span class="mode-icon" id="ttsIconM">🔇</span><span id="ttsLblM"> Voix OFF</span></button>
       <button class="mode-item" onclick="cycleLang()"><span class="mode-icon">🌐</span><span id="langLblM"> Français</span></button>
@@ -640,6 +642,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <!-- MODALS -->
+<div class="overlay" id="studioModal" onclick="if(event.target===this)closeStudio()"><div class="modal"><div class="modal-h"><h3>🎨 Atelier d'apparence</h3><button class="mx" onclick="closeStudio()">✕</button></div><div class="modal-body"><div style="font-size:13px;color:var(--text2)">Décris ce que tu veux changer — JARVIS modifie l'apparence en direct. Tu gardes ou tu annules.</div><div class="pb-options"><button class="pb-opt" onclick="studioEx('Mets un accent violet et des coins plus arrondis')">Violet arrondi</button><button class="pb-opt" onclick="studioEx('Agrandis le texte des messages')">Texte plus grand</button><button class="pb-opt" onclick="studioEx('Accent vert émeraude')">Vert émeraude</button><button class="pb-opt" onclick="studioEx('Bulles plus compactes')">Compact</button></div><textarea class="fta" id="studioInput" placeholder="Ex : mets un accent doré et des bulles plus arrondies" style="min-height:80px"></textarea><div id="studioStatus" class="st-neu">&nbsp;</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-p" style="flex:2;min-width:150px" onclick="studioGenerate()">✨ Appliquer l'aperçu</button><button class="btn-sec" id="studioKeepBtn" onclick="studioKeep()" disabled>💾 Garder</button></div><button class="btn-danger" style="width:100%" onclick="studioReset()">↩️ Réinitialiser l'apparence par défaut</button></div></div></div>
 <div class="overlay" id="convoModal" onclick="bgClose(event,'convoModal')"><div class="modal"><div class="modal-h"><h3>💬 Conversations</h3><button class="mx" onclick="closeM('convoModal')">✕</button></div><div class="modal-body"><button class="btn-p" onclick="newChat();closeM('convoModal')">✏️ Nouvelle conversation</button><input class="finp" id="convoSearch" placeholder="🔍 Rechercher une conversation…" oninput="renderConvos()"><div id="convoListModal" class="convo-list"></div></div></div></div>
 <div class="overlay" id="promptModal" onclick="bgClose(event,'promptModal')"><div class="modal"><div class="modal-h"><h3>✨ Validation du prompt</h3><button class="mx" onclick="cancelPrompt()">✕</button></div><div class="modal-body"><div style="font-size:13px;color:var(--text2)">J'ai transformé ta demande en prompt optimisé. Vérifie-le, modifie-le si besoin, puis valide.</div><div class="field"><div class="flbl">Ta demande</div><div id="promptOriginal" style="font-size:13px;color:var(--text3);background:var(--bg2);border:1px solid var(--line);border-radius:11px;padding:10px 12px;line-height:1.5"></div></div><div class="field"><div class="flbl">Prompt proposé (modifiable)</div><textarea class="fta" id="promptDraft" style="min-height:150px"></textarea></div><div id="promptStatus" class="st-neu">&nbsp;</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-p" style="flex:2;min-width:160px" onclick="confirmPrompt()">✅ Valider &amp; envoyer</button><button class="btn-sec" style="flex:1" onclick="regenPrompt()">🔄 Régénérer</button><button class="btn-danger" onclick="cancelPrompt()">Annuler</button></div></div></div></div>
 
@@ -1137,6 +1140,7 @@ function initApp() {
   const sd = SEC.plain('sessDur','8');
   document.getElementById('sessDurSel').value = sd;
   document.getElementById('sessDisplay').textContent = sd+'h';
+  applyCustomCSS(); // applique l'apparence personnalisée éventuelle
   // Reprend la conversation la plus récente du chat général (sinon nouvelle)
   const recent = getConvos().find(c => (c.project||'general') === 'general');
   if (recent) { currentConvoId = recent.id; history = (recent.messages||[]).slice(); }
@@ -2575,6 +2579,70 @@ async function maybeLearn(convoId, messages) {
     await setMem(mem); refreshMemCount();
     toast('🧠 JARVIS a mémorisé ' + added.length + ' info' + (added.length>1?'s':''));
   } catch (_) { /* silencieux : la mémoire ne doit jamais bloquer */ }
+}
+
+// ═══════════════════════════════════════
+// ATELIER D'APPARENCE (l'app se personnalise via l'IA)
+// ═══════════════════════════════════════
+const STUDIO_ENGINEER = "Tu es un expert CSS. L'utilisateur veut personnaliser l'apparence de son application web (thème sombre nommé JARVIS). Variables CSS modifiables via :root{} : --bg, --bg1, --bg2, --bg3, --line, --line2, --blue, --blue2, --text, --text2, --text3, --r, --r2. Classes principales : .topbar, .sidebar, .msg-bubble, .msg.user .msg-bubble, .chip, .input-wrap, .welcome h2, .mobile-nav, .modal, .btn-p, .tool-btn, .convo-item. À partir de la demande, génère UNIQUEMENT du CSS valide (des règles avec accolades) qui réalise le changement ; tu peux surcharger :root pour les couleurs globales. INTERDIT : balise style, commentaires, markdown, texte explicatif, @import, url(), expression(). Réponds SEULEMENT avec le CSS.";
+function sanitizeCSS(s) {
+  return String(s)
+    .replace(/```[a-z]*/gi,'').replace(/```/g,'')
+    .replace(/<\/?style[^>]*>/gi,'')
+    .replace(/<script[\s\S]*?<\/script>/gi,'')
+    .replace(/@import[^;]+;/gi,'')
+    .replace(/expression\s*\(/gi,'')
+    .replace(/url\s*\(\s*['"]?\s*javascript:[^)]*\)/gi,'')
+    .replace(/<[^>]+>/g,'')
+    .trim();
+}
+function applyCustomCSS() {
+  const css = SEC.plain('customCSS','');
+  let el = document.getElementById('userStyle');
+  if (!el) { el = document.createElement('style'); el.id = 'userStyle'; document.head.appendChild(el); }
+  el.textContent = css;
+}
+let _studioBackup = '';
+function openStudio() {
+  document.querySelectorAll('.mobile-panel').forEach(p => p.classList.remove('visible'));
+  _studioBackup = SEC.plain('customCSS','');
+  const inp = document.getElementById('studioInput'); if (inp) inp.value = '';
+  const st = document.getElementById('studioStatus'); if (st) { st.textContent = ' '; st.className = 'st-neu'; }
+  document.getElementById('studioKeepBtn').disabled = true;
+  openM('studioModal');
+}
+function studioEx(t) { document.getElementById('studioInput').value = t; }
+async function studioGenerate() {
+  const req = document.getElementById('studioInput').value.trim();
+  const st = document.getElementById('studioStatus');
+  if (!req) { st.textContent = 'Décris d\'abord le changement souhaité.'; st.className = 'st-err'; return; }
+  const ai = pickFastAI(); if (!ai) { openM('keysModal'); return; }
+  st.textContent = '⏳ Je conçois le style…'; st.className = 'st-neu';
+  try {
+    const css = sanitizeCSS(await askOnce(ai, STUDIO_ENGINEER, req));
+    if (!css) { st.textContent = '⚠ Rien à appliquer, reformule ta demande.'; st.className = 'st-err'; return; }
+    let el = document.getElementById('userStyle');
+    if (!el) { el = document.createElement('style'); el.id = 'userStyle'; document.head.appendChild(el); }
+    el.textContent = css; // aperçu live
+    st.textContent = '✅ Aperçu appliqué. « Garder » pour le conserver.'; st.className = 'st-ok';
+    document.getElementById('studioKeepBtn').disabled = false;
+  } catch (e) { st.textContent = '⚠ ' + e.message; st.className = 'st-err'; }
+}
+function studioKeep() {
+  const el = document.getElementById('userStyle');
+  SEC.setPlain('customCSS', el ? el.textContent : '');
+  toast('✅ Apparence personnalisée gardée');
+  closeM('studioModal');
+}
+function closeStudio() {
+  const el = document.getElementById('userStyle'); if (el) el.textContent = _studioBackup; // revient au dernier état gardé
+  closeM('studioModal');
+}
+function studioReset() {
+  SEC.setPlain('customCSS','');
+  const el = document.getElementById('userStyle'); if (el) el.textContent = '';
+  _studioBackup = ''; document.getElementById('studioKeepBtn').disabled = true;
+  toast('↩️ Apparence par défaut restaurée');
 }
 
 // ═══════════════════════════════════════
