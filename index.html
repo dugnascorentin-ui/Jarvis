@@ -2595,7 +2595,16 @@ function bgClose(e,id) { if(e.target===document.getElementById(id))closeM(id); }
 // PWA
 // ═══════════════════════════════════════
 let _deferredInstall=null;
-if ('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+if ('serviceWorker' in navigator) window.addEventListener('load',()=>{
+  navigator.serviceWorker.register('./sw.js').then(reg=>{
+    reg.update();
+    // Re-vérifie une nouvelle version quand l'app reprend le focus
+    document.addEventListener('visibilitychange',()=>{ if(!document.hidden) reg.update(); });
+  }).catch(()=>{});
+});
+// Indicateur réseau (hors-ligne / reconnexion)
+window.addEventListener('offline',()=>toast('📡 Hors-ligne — JARVIS reste accessible, mais les IA répondront au retour du réseau'));
+window.addEventListener('online',()=>toast('✅ De retour en ligne'));
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();_deferredInstall=e;document.getElementById('pwaBtn').style.display='flex';});
 function installPWA(){
   if(!_deferredInstall){alert('📱 iPhone : Partage → "Sur l\'écran d\'accueil"\n🤖 Android : Menu ⋮ → "Ajouter à l\'écran d\'accueil"\n💻 PC Chrome : icône ⊕ dans la barre d\'adresse');return;}
