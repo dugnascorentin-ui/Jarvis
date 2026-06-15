@@ -1281,7 +1281,9 @@ async function persistActive() {
   await saveConvos(list);
 }
 async function newConversation() {
+  const prevId = currentConvoId, prevMsgs = history.slice();
   await persistActive();
+  maybeLearn(prevId, prevMsgs); // apprentissage en arrière-plan (non bloquant)
   currentConvoId = _cid(); history = []; clearPending(); renderMessages(); renderConvos();
 }
 async function loadConversation(id) {
@@ -1350,7 +1352,9 @@ function renderConvos() {
 function openConvos() { const s=document.getElementById('convoSearch'); if(s) s.value=''; renderConvos(); openM('convoModal'); }
 
 async function switchProject(id) {
+  const prevId = currentConvoId, prevMsgs = history.slice();
   await persistActive();
+  maybeLearn(prevId, prevMsgs); // apprend de la conversation qu'on quitte
   currentProject = id;
   // Reprend la conversation la plus récente de ce projet, sinon nouvelle
   const recent = getConvos().find(c => (c.project||'general') === id);
@@ -2527,12 +2531,50 @@ async function addMem()   { const inp=document.getElementById('memInput'); const
 async function delMem(i)  { const m=getMem(); m.splice(i,1); await setMem(m); renderMemList(); refreshMemCount(); }
 async function clearMem() { if(!confirm('Effacer tous les souvenirs ?'))return; await setMem([]); renderMemList(); refreshMemCount(); }
 
+// Capture instantanée légère (le prénom) — l'apprentissage profond se fait via maybeLearn()
 async function tryExtractMem(text) {
-  const triggers=[/je m'appelle\b/i,/je suis\b/i,/je travaille\b/i,/mon projet\b/i,/j'aime\b/i,/je pr[eé]f[eè]re\b/i,/ma startup\b/i,/je veux cr[eé]er\b/i,/j'habite\b/i];
-  if (!triggers.some(rx=>rx.test(text))) return;
-  const snippet=text.length>140?text.substring(0,140)+'…':text;
-  const mem=getMem();
-  if (!mem.includes(snippet)) { mem.push(snippet); if(mem.length>20)mem.shift(); await setMem(mem); refreshMemCount(); }
+  const m = (text||'').match(/\bje m'?appelle\s+([A-Za-zÀ-ÿ][\wÀ-ÿ'’-]{1,20})/i);
+  if (!m) return;
+  const fact = 'Prénom : ' + m[1].charAt(0).toUpperCase() + m[1].slice(1);
+  const mem = getMem();
+  if (!mem.some(x => x.toLowerCase().startsWith('prénom'))) { mem.push(fact); await setMem(mem); refreshMemCount(); }
+}
+
+// ── MÉMOIRE LONGUE INTELLIGENTE ──
+const MEM_EXTRACT = "Tu analyses une conversation pour en extraire UNIQUEMENT des informations DURABLES et personnelles sur l'utilisateur : prénom, métier/situation, préférences stables, projets en cours, objectifs, faits importants à retenir sur le long terme. RÈGLES : une information par ligne, courte et factuelle, formulée à propos de l'utilisateur (ex : 'Prénom : Corentin', 'Construit une app assistant nommée JARVIS', 'Préfère des réponses détaillées et directes'). N'invente rien. Ignore tout ce qui est éphémère, trivial ou hypothétique. Si rien de durable à retenir, réponds EXACTEMENT : NONE.";
+const _learned = new Set();
+function pickFastAI() {
+  const avail = getAllAIs().filter(a => !!getKey(a));
+  const order = ['groq','cerebras','gemini','mistral','deepseek'];
+  for (const id of order) { const ai = avail.find(a => a.id===id); if (ai) return ai; }
+  return avail[0] || null;
+}
+async function maybeLearn(convoId, messages) {
+  try {
+    if (!convoId || _learned.has(convoId)) return;
+    const userMsgs = (messages||[]).filter(m => m.role === 'user');
+    if (userMsgs.length < 2) return;                 // pas assez de matière
+    const ai = pickFastAI(); if (!ai) return;
+    _learned.add(convoId);
+    const transcript = messages.slice(-12).map(m => (m.role==='user'?'Utilisateur: ':'JARVIS: ') + (m.content||'').slice(0,400)).join('\n');
+    const out = await askOnce(ai, MEM_EXTRACT, transcript);
+    if (!out || /^\s*none\s*$/i.test(out.trim())) return;
+    const mem = getMem();
+    const low = mem.map(s => s.toLowerCase());
+    const added = [];
+    for (let line of out.split('\n')) {
+      line = line.replace(/^[-•*\d.\s]+/, '').trim();
+      if (line.length < 3 || /^none$/i.test(line)) continue;
+      const l = line.toLowerCase();
+      if (low.includes(l) || low.some(e => e.includes(l) || l.includes(e))) continue; // dédup souple
+      mem.push(line); low.push(l); added.push(line);
+      if (added.length >= 6) break;
+    }
+    if (!added.length) return;
+    if (mem.length > 40) mem.splice(0, mem.length - 40);
+    await setMem(mem); refreshMemCount();
+    toast('🧠 JARVIS a mémorisé ' + added.length + ' info' + (added.length>1?'s':''));
+  } catch (_) { /* silencieux : la mémoire ne doit jamais bloquer */ }
 }
 
 // ═══════════════════════════════════════
