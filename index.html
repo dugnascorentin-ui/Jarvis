@@ -476,11 +476,14 @@ button:active:not(:disabled){transform:scale(.96)}
 .convo-item.active{background:rgba(79,124,255,.12);border-color:rgba(79,124,255,.3);color:var(--text)}
 .convo-ic{font-size:14px;flex-shrink:0;opacity:.8}
 .convo-title{flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.convo-del,.convo-edit{flex-shrink:0;opacity:0;color:var(--text3);font-size:12px;padding:2px 5px;border-radius:5px;transition:all .15s}
-.convo-item:hover .convo-del,.convo-item:hover .convo-edit{opacity:.55}
+.convo-del,.convo-edit,.convo-pin{flex-shrink:0;opacity:0;color:var(--text3);font-size:12px;padding:2px 5px;border-radius:5px;transition:all .15s;filter:grayscale(1)}
+.convo-item:hover .convo-del,.convo-item:hover .convo-edit,.convo-item:hover .convo-pin{opacity:.5}
+.convo-item.pinned .convo-pin{opacity:.95;filter:none}
+.convo-pin:hover{opacity:1;filter:none;background:rgba(245,158,11,.14)}
 .convo-edit:hover{opacity:1;color:var(--blue2);background:rgba(79,124,255,.12)}
 .convo-del:hover{opacity:1;color:var(--red);background:rgba(240,85,106,.12)}
-#convoListModal .convo-edit{opacity:.55}
+#convoListModal .convo-edit,#convoListModal .convo-pin{opacity:.5}
+#convoListModal .convo-item.pinned .convo-pin{opacity:.95;filter:none}
 .convo-empty{font-size:12px;color:var(--text3);padding:10px;text-align:center}
 #convoListModal .convo-item{padding:12px;border:1px solid rgba(255,255,255,.07);margin-bottom:2px}
 #convoListModal .convo-del{opacity:.6}
@@ -1279,10 +1282,17 @@ async function persistActive() {
   let list = getConvos().slice();
   const i = list.findIndex(c => c.id === currentConvoId);
   if (!history.length) { if (i >= 0) { list.splice(i,1); await saveConvos(list); renderConvos(); } return; }
+  const prevPinned = i >= 0 ? list[i].pinned : false;
+  const prevTitle  = i >= 0 ? list[i].title : null; // conserve un titre renommé manuellement
   if (i >= 0) list.splice(i,1);
-  list.unshift({ id:currentConvoId, title:convoTitleFrom(history), ts:Date.now(), project:currentProject, messages:history });
+  list.unshift({ id:currentConvoId, title:prevTitle || convoTitleFrom(history), ts:Date.now(), project:currentProject, messages:history, pinned:prevPinned });
   if (list.length > 100) list = list.slice(0,100);
   await saveConvos(list);
+}
+async function togglePin(id, ev) {
+  ev && ev.stopPropagation();
+  await saveConvos(getConvos().map(c => c.id === id ? { ...c, pinned: !c.pinned } : c));
+  renderConvos();
 }
 async function newConversation() {
   const prevId = currentConvoId, prevMsgs = history.slice();
@@ -1335,15 +1345,17 @@ function setProjectBar(id) {
 }
 // Rendu de la liste des conversations (sidebar PC + modale avec recherche)
 function _convoItemHTML(c) {
-  return `<button class="convo-item${c.id===currentConvoId?' active':''}" onclick="loadConversation('${c.id}')">
-      <span class="convo-ic">💬</span>
+  return `<button class="convo-item${c.id===currentConvoId?' active':''}${c.pinned?' pinned':''}" onclick="loadConversation('${c.id}')">
+      <span class="convo-ic">${c.pinned?'📌':'💬'}</span>
       <span class="convo-title">${escHtml(c.title)}</span>
+      <span class="convo-pin" onclick="togglePin('${c.id}',event)" title="${c.pinned?'Désépingler':'Épingler'}">📌</span>
       <span class="convo-edit" onclick="renameConvo('${c.id}',event)" title="Renommer">✎</span>
       <span class="convo-del" onclick="deleteConversation('${c.id}',event)" title="Supprimer">✕</span>
     </button>`;
 }
 function renderConvos() {
-  const list = getConvos().filter(c => (c.project||'general') === currentProject);
+  const list = getConvos().filter(c => (c.project||'general') === currentProject)
+    .sort((a,b) => (b.pinned?1:0) - (a.pinned?1:0)); // épinglées en tête (tri stable)
   const sb = document.getElementById('convoListSidebar');
   if (sb) sb.innerHTML = list.length ? list.map(_convoItemHTML).join('') : `<div class="convo-empty">Aucune conversation</div>`;
   const md = document.getElementById('convoListModal');
