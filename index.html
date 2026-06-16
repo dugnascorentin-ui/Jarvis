@@ -436,6 +436,7 @@ button:active:not(:disabled){transform:scale(.96)}
 .fc-sub{font-size:11.5px;color:var(--text3)}
 .fc-dl{font-size:18px;flex-shrink:0;color:var(--blue2)}
 .ia-btn.send{box-shadow:0 4px 16px rgba(79,124,255,.4)}
+.ia-btn.send.stopping{background:linear-gradient(135deg,#f0556a,#d9344a);box-shadow:0 4px 16px rgba(240,85,106,.45)}
 .ia-btn.send:hover:not(:disabled){box-shadow:0 6px 22px rgba(79,124,255,.6)}
 .input-hint{display:none}
 
@@ -2039,7 +2040,7 @@ function appendMsgDOM(role, text, ai, imgSrc) {
       ${imgSrc?`<img class="msg-img" src="${imgSrc}" alt="image">`:''}
       <div class="msg-bubble">${content}</div>
       <div class="msg-actions">${tag}<span>${name}</span>
-        ${role==='assistant'?`<button class="act-btn" onclick="copyBubble(this)" title="Copier">📋</button><button class="act-btn" onclick="speakBubble(this,'${encodeURIComponent(text)}')" title="Lire">🔊</button>`:''}
+        ${role==='assistant'?`<button class="act-btn" onclick="copyBubble(this)" title="Copier">📋</button><button class="act-btn" onclick="regenerate()" title="Régénérer">↻</button><button class="act-btn" onclick="speakBubble(this,'${encodeURIComponent(text)}')" title="Lire">🔊</button>`:''}
       </div>
       ${role==='assistant'?`<div class="fb-row"><button class="fb-btn" onclick="giveFB(this,'up')">👍</button><button class="fb-btn" onclick="giveFB(this,'down')">👎</button></div>`:''}
     </div>`;
@@ -2187,6 +2188,26 @@ function removeTyping() { document.getElementById('typingRow')?.remove(); }
 // ═══════════════════════════════════════
 // SEND — avec fallback automatique
 // ═══════════════════════════════════════
+let _abort = null, _stopped = false;
+function setGenerating(on) {
+  const b = document.getElementById('sendBtn'); if (!b) return;
+  if (on) { b.disabled = false; b.classList.add('stopping'); b.textContent = '⏹'; b.onclick = stopGeneration; b.title = 'Arrêter la génération'; }
+  else { b.classList.remove('stopping'); b.textContent = '➤'; b.onclick = send; b.title = ''; b.disabled = false; }
+}
+function stopGeneration() { _stopped = true; try { _abort && _abort.abort(); } catch {} }
+// Régénère la dernière réponse : repart du dernier message utilisateur
+async function regenerate() {
+  if (busy) return;
+  let idx = -1;
+  for (let i = history.length - 1; i >= 0; i--) { if (history[i].role === 'user') { idx = i; break; } }
+  if (idx < 0) return;
+  const lastUser = history[idx].content;
+  history = history.slice(0, idx);   // retire la question + tout ce qui suit
+  await persistActive(); renderConvos(); renderMessages();
+  const inp = document.getElementById('chatInput');
+  inp.value = lastUser; _bypassReview = true;
+  send();
+}
 async function send() {
   if (busy) return;
   const inp=document.getElementById('chatInput');
@@ -2257,8 +2278,8 @@ async function send() {
   const sys=(PROMPTS[modeKey]||PROMPTS.auto)+autoPrompt+docDirective+projPrompt+memCtx;
 
   const tryCall=async ai=>{
-    if (ai.type==='gemini') return callGeminiStream(getKey(ai),sys,history.slice(0,-1),savedImg,userContent||displayText,onChunk);
-    return callOpenAIStream(getKey(ai),ai.url,ai.model,sys,onChunk);
+    if (ai.type==='gemini') return callGeminiStream(getKey(ai),sys,history.slice(0,-1),savedImg,userContent||displayText,onChunk,_abort&&_abort.signal);
+    return callOpenAIStream(getKey(ai),ai.url,ai.model,sys,onChunk,_abort&&_abort.signal);
   };
 
   // Affichage en direct façon « machine à écrire » : fluide même si l'IA répond très vite
@@ -2284,6 +2305,7 @@ async function send() {
 
   let reply='', usedAI=chosenAI, doneCouncil=false;
   const errors=[];
+  _abort = new AbortController(); _stopped = false; setGenerating(true);
 
   // Mode Conseil multi-IA : plusieurs IA répondent, puis JARVIS synthétise
   if (councilMode && !hasImg && !hasFile && getAllAIs().filter(a=>!!getKey(a)).length>=2) {
@@ -2305,41 +2327,50 @@ async function send() {
   if (!doneCouncil) try {
     reply=await tryCall(chosenAI);
   } catch(err1) {
-    // On garde la vraie erreur (utile pour déboguer) au lieu de l'avaler
-    errors.push(`${chosenAI.name} → ${err1.message}`);
-    console.warn(`[JARVIS] ${chosenAI.name} a échoué :`, err1.message);
-    resetLive();
-    // Fallback automatique sur les autres IAs disponibles
-    const fallbacks=getAllAIs().filter(ai=>!!getKey(ai)&&ai.id!==chosenAI.id);
-    let ok=false;
-    for (const fb of fallbacks) {
-      try { reply=await tryCall(fb); usedAI=fb; ok=true; break; }
-      catch(err2) { errors.push(`${fb.name} → ${err2.message}`); console.warn(`[JARVIS] ${fb.name} a échoué :`, err2.message); resetLive(); }
+    if (_stopped) {
+      // Arrêt volontaire de l'utilisateur : on garde le texte partiel, pas de fallback
+    } else {
+      errors.push(`${chosenAI.name} → ${err1.message}`);
+      console.warn(`[JARVIS] ${chosenAI.name} a échoué :`, err1.message);
+      resetLive();
+      // Fallback automatique sur les autres IAs disponibles
+      const fallbacks=getAllAIs().filter(ai=>!!getKey(ai)&&ai.id!==chosenAI.id);
+      let ok=false;
+      for (const fb of fallbacks) {
+        if (_stopped) break;
+        try { reply=await tryCall(fb); usedAI=fb; ok=true; break; }
+        catch(err2) { errors.push(`${fb.name} → ${err2.message}`); console.warn(`[JARVIS] ${fb.name} a échoué :`, err2.message); resetLive(); }
+      }
+      if (!ok && !_stopped) {
+        removeTyping(); setGenerating(false);
+        const detail = errors.map(e=>'• '+e).join('\n');
+        appendMsgDOM('assistant',`❌ Aucune IA n'a pu répondre.\n\n**Erreurs réelles :**\n${detail}\n\nVérifie tes clés dans 🔑 Clés (clé valide ? quota dépassé ?).`,chosenAI);
+        busy=false; inp.focus(); return;
+      }
+      if (ok) {
+        document.getElementById('fallbackBar').style.display='flex';
+        document.getElementById('fallbackName').textContent=usedAI.name;
+        setTimeout(()=>document.getElementById('fallbackBar').style.display='none',6000);
+      }
     }
-    if (!ok) {
-      removeTyping();
-      const detail = errors.map(e=>'• '+e).join('\n');
-      appendMsgDOM('assistant',`❌ Aucune IA n'a pu répondre.\n\n**Erreurs réelles :**\n${detail}\n\nVérifie tes clés dans 🔑 Clés (clé valide ? quota dépassé ?).`,chosenAI);
-      busy=false; document.getElementById('sendBtn').disabled=false; inp.focus(); return;
-    }
-    document.getElementById('fallbackBar').style.display='flex';
-    document.getElementById('fallbackName').textContent=usedAI.name;
-    setTimeout(()=>document.getElementById('fallbackBar').style.display='none',6000);
   }
 
   // On laisse la machine à écrire finir d'afficher proprement avant de finaliser
   streamEnded=true;
   if (liveWrap && pumpDone) await pumpDone;
+  setGenerating(false);
   removeTyping();
   if (liveWrap) liveWrap.remove();
-  appendMsgDOM('assistant',reply,usedAI);
+  // Arrêt avant le moindre texte → rien à enregistrer
+  if (_stopped && !reply.trim()) { busy=false; inp.focus(); return; }
+  appendMsgDOM('assistant', reply + (_stopped ? '\n\n_— interrompu —_' : ''), usedAI);
   // Si l'utilisateur a demandé un fichier, on ajoute une carte téléchargeable dans le chat
-  if (docReq.wanted) appendFileCard(reply, docReq);
+  if (docReq.wanted && !_stopped) appendFileCard(reply, docReq);
   history.push({role:'assistant',content:reply,aiId:usedAI.id});
   await persistActive(); renderConvos();
   tryExtractMem(userContent||displayText);
-  if (ttsOn && !voiceConvo) speak(reply);
-  busy=false; document.getElementById('sendBtn').disabled=false; inp.focus();
+  if (ttsOn && !voiceConvo && !_stopped) speak(reply);
+  busy=false; inp.focus();
 }
 
 // ═══════════════════════════════════════
@@ -2395,28 +2426,30 @@ async function _readSSE(res, onEvent) {
 }
 
 // Appel streaming OpenAI-compatible (Groq, Mistral, DeepSeek, Cerebras...)
-async function callOpenAIStream(key,url,model,sys,onChunk) {
+async function callOpenAIStream(key,url,model,sys,onChunk,signal) {
   const messages=[{role:'system',content:sys},...history.map(m=>({role:m.role,content:m.content}))];
-  const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},body:JSON.stringify({model,messages,max_tokens:8192,temperature:0.7,stream:true})});
+  const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},body:JSON.stringify({model,messages,max_tokens:8192,temperature:0.7,stream:true}),signal});
   if (!res.ok || !res.body) { const e=await res.json().catch(()=>({})); throw new Error(e.error?.message||e.message||`HTTP ${res.status}`); }
   let full='';
-  await _readSSE(res, obj=>{ const t=obj.choices?.[0]?.delta?.content; if(t){ full+=t; onChunk(t); } });
+  try { await _readSSE(res, obj=>{ const t=obj.choices?.[0]?.delta?.content; if(t){ full+=t; onChunk(t); } }); }
+  catch(e){ if (e.name==='AbortError'||signal?.aborted) return full; throw e; }
   if (!full.trim()) throw new Error('Réponse vide');
   return full;
 }
 
 // Appel streaming Gemini
-async function callGeminiStream(key,sys,prevHist,image,currentText,onChunk) {
+async function callGeminiStream(key,sys,prevHist,image,currentText,onChunk,signal) {
   const contents=prevHist.map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:m.content}]}));
   const parts=[]; if(image)parts.push({inlineData:{mimeType:image.mimeType,data:image.base64}});
   parts.push({text:currentText||'Analyse.'}); contents.push({role:'user',parts});
   const model=AIS.find(a=>a.id==='gemini')?.model||'gemini-2.5-flash';
   const body={system_instruction:{parts:[{text:sys}]},contents,generationConfig:{temperature:0.7,maxOutputTokens:8192}};
   if (!image) body.tools=[{google_search:{}}];
-  const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal});
   if (!res.ok || !res.body) { const e=await res.json().catch(()=>({})); throw new Error(e.error?.message||`HTTP ${res.status}`); }
   let full='';
-  await _readSSE(res, obj=>{ const t=(obj.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join(''); if(t){ full+=t; onChunk(t); } });
+  try { await _readSSE(res, obj=>{ const t=(obj.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join(''); if(t){ full+=t; onChunk(t); } }); }
+  catch(e){ if (e.name==='AbortError'||signal?.aborted) return full; throw e; }
   if (!full.trim()) throw new Error('Réponse vide');
   return full;
 }
